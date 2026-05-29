@@ -44,7 +44,7 @@ class ChronoTime(pd.Timestamp):
         )
 
     def trading_times(
-        self, end: Union[datetime, "ChronoTime", pd.Timestamp], step: str = "1min"
+        self, end: Union[datetime, "ChronoTime", pd.Timestamp, str], step: str = "1min"
     ) -> pd.Series:
         """
         [self, end)
@@ -54,7 +54,7 @@ class ChronoTime(pd.Timestamp):
         )
 
     def trading_day_delta(
-        self, end: Union[datetime, "ChronoTime", pd.Timestamp]
+        self, end: Union[datetime, "ChronoTime", pd.Timestamp, str]
     ) -> int:
         """
         Return the signed trading-day distance between `self` and `end`.

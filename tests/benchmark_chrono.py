@@ -4,7 +4,7 @@ from chronosx_quant.scheduler import StaticMinuteScheduler, SchedulerManager
 from chronosx_quant.time import ChronoTime
 
 
-CALENDARS = ["SSE", "CME Globex Crypto", "ICE"]
+CALENDARS = ["SSE", "CME Globex Crypto", "ICE", "CN_FUTURES_2300"]
 
 
 @pytest.fixture(params=CALENDARS)

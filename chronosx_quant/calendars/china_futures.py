@@ -1,0 +1,130 @@
+from abc import ABC, abstractmethod
+from datetime import time
+from functools import cached_property
+
+import pandas as pd
+from pandas_market_calendars.calendars.sse import SSEExchangeCalendar
+
+
+class _BaseChinaFuturesNightCalendar(SSEExchangeCalendar, ABC):
+    """
+    Chinese futures calendars that share SSE holidays and Asia/Shanghai timezone.
+    """
+
+    aliases = []
+    regular_market_times = {
+        "market_open": ((None, time(9, 0)),),
+        "break_start_1": ((None, time(10, 15)),),
+        "break_end_1": ((None, time(10, 30)),),
+        "break_start_2": ((None, time(11, 30)),),
+        "break_end_2": ((None, time(13, 30)),),
+        "break_start_3": ((None, time(15, 0)),),
+    }
+
+    open_close_map = {
+        "market_open": True,
+        "break_start_1": False,
+        "break_end_1": True,
+        "break_start_2": False,
+        "break_end_2": True,
+        "break_start_3": False,
+        "break_end_3": True,
+        "market_close": False,
+    }
+
+    @cached_property
+    def _holiday_dates(self):
+        holiday_start = "1990-01-01"
+        holiday_end = "2100-12-31"
+
+        regular_holidays = (
+            self.regular_holidays.holidays(holiday_start, holiday_end)
+            if self.regular_holidays is not None
+            else pd.DatetimeIndex([])
+        )
+        adhoc_holidays = pd.DatetimeIndex(self.adhoc_holidays)
+
+        return regular_holidays.union(adhoc_holidays).sort_values().normalize()
+
+    @cached_property
+    def _holiday_eve_dates(self):
+        if self._holiday_dates.empty:
+            return pd.DatetimeIndex([])
+
+        holiday_series = self._holiday_dates.to_series(index=self._holiday_dates)
+        holiday_block_starts = holiday_series[
+            holiday_series.diff().ne(pd.Timedelta(days=1)).fillna(True)
+        ].index
+
+        holiday_eves = []
+        for holiday_start in holiday_block_starts:
+            previous_trading_days = self.valid_days(
+                holiday_start - pd.Timedelta(days=7),
+                holiday_start - pd.Timedelta(days=1),
+                tz=None,
+            )
+            if len(previous_trading_days) > 0:
+                holiday_eves.append(previous_trading_days[-1])
+
+        return pd.DatetimeIndex(holiday_eves).drop_duplicates().sort_values()
+
+    @property
+    def special_closes_adhoc(self):
+        # No night session is held on the trading day immediately before a holiday block.
+        return [(time(15, 0), self._holiday_eve_dates)]
+
+    @property
+    @abstractmethod
+    def name(self):
+        raise NotImplementedError
+
+
+class ChinaFuturesNight0230Calendar(_BaseChinaFuturesNightCalendar):
+    aliases = ["CN_FUTURES_0230", "SC.INE AG.SHF", "SC.INE", "AG.SHF"]
+    regular_market_times = {
+        **_BaseChinaFuturesNightCalendar.regular_market_times,
+        "break_end_3": ((None, time(21, 0)),),
+        "market_close": ((None, time(2, 30), 1),),
+    }
+
+    @property
+    def name(self):
+        return "CN_FUTURES_0230"
+
+    @property
+    def full_name(self):
+        return "China Futures Night Session 02:30 Close"
+
+
+class ChinaFuturesNight0100Calendar(_BaseChinaFuturesNightCalendar):
+    aliases = ["CN_FUTURES_0100", "BC.INE CU.SHF", "BC.INE", "CU.SHF"]
+    regular_market_times = {
+        **_BaseChinaFuturesNightCalendar.regular_market_times,
+        "break_end_3": ((None, time(21, 0)),),
+        "market_close": ((None, time(1, 0), 1),),
+    }
+
+    @property
+    def name(self):
+        return "CN_FUTURES_0100"
+
+    @property
+    def full_name(self):
+        return "China Futures Night Session 01:00 Close"
+
+
+class ChinaFuturesNight2300Calendar(_BaseChinaFuturesNightCalendar):
+    aliases = ["CN_FUTURES_2300", "DCE", "CZC"]
+    regular_market_times = {
+        **_BaseChinaFuturesNightCalendar.regular_market_times,
+        "break_end_3": ((None, time(21, 0)),),
+        "market_close": ((None, time(23, 0)),),
+    }
+
+    @property
+    def name(self):
+        return "CN_FUTURES_2300"
+
+    @property
+    def full_name(self):
+        return "China Futures Night Session 23:00 Close"

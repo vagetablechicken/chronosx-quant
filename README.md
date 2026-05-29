@@ -8,7 +8,7 @@ Install the library:
 
 ```bash
 uv build
-pip install dist/chronosx_quant-0.2.2-py3-none-any.whl
+pip install dist/chronosx_quant-*-py3-none-any.whl
 
 # install from pypi
 pip install chronosx-quant
@@ -57,6 +57,9 @@ time.trading_times(end=pd.Timestamp("2026-03-09 13:01:00+08:00"))
 # series can aggregate, e.g. get all date in trading series
 time.trading_times(end=pd.Timestamp("2026-03-09 13:01:00+08:00")).resample('D').first()
 
+# simpler trading day calculation
+print(ChronoTime("2026-04-08").trading_day_delta("2026-04-09"))
+
 # move to the beginning of trading session which the time belongs to
 # e.g. SSE "2026-03-08 11:29:00+08:00" belongs to session '2026-03-08', so the session start is '2026-03-08 09:30:00+08:00'
 # e.g. CME session '2026-03-08' starts from '2026-03-07 17:00:00-06:00', so the session start is '2026-03-07 17:00:00-06:00', not '2026-03-08 00:00:00+00:00'
@@ -86,6 +89,41 @@ with travel("2026-03-09 11:29:00+08:00"):
 ### Add calendar
 
 Chronosx based on pandas_market_calendars, so it can use all calendars in the project, and support to add custom calendars.
+
+Project custom calendars live in [chronosx_quant/calendars](./chronosx_quant/calendars).
+
+For the China futures night-session calendars below, we intentionally diverge
+from the original upstream calendar model.
+
+The original `pandas_market_calendars` calendars do not support our multi-break
+use case cleanly enough, so Chronosx forcefully extends the market-time map with
+extra open/close events such as `break_start_1`, `break_end_1`, `break_start_2`,
+`break_end_2`, `break_start_3`, and `break_end_3`. These calendars are meant to
+be consumed by Chronosx's custom scheduler path, especially
+`StaticMinuteScheduler`, which scans our custom `open_close_map` and builds
+trading intervals from it.
+
+Because of that, these are Chronosx-specific calendars. Please follow the
+Chronosx calling pattern when using them:
+
+- use them through `ChronoTime`, `SchedulerManager`, `StaticMinuteScheduler`, or the service API
+- do not assume they are interchangeable with upstream built-in calendars in generic `pandas_market_calendars` workflows
+- do not reuse the original single-break calendar assumptions when extending these calendars
+- if you add more China futures calendars, keep the custom event naming and Chronosx scheduler contract consistent
+
+For SHF/DCE in China, calendars have multiple breaks. These three built-in variants are available:
+
+- `CN_FUTURES_0230`
+  aliases: `SC.INE AG.SHF`, `SC.INE`, `AG.SHF`
+  hours: `09:00-10:15 | 10:30-11:30 | 13:30-15:00 | 21:00-02:30+1`
+
+- `CN_FUTURES_0100`
+  aliases: `BC.INE CU.SHF`, `BC.INE`, `CU.SHF`
+  hours: `09:00-10:15 | 10:30-11:30 | 13:30-15:00 | 21:00-01:00+1`
+
+- `CN_FUTURES_2300`
+  aliases: `DCE/CZC`, `DCE`, `CZC`
+  hours: `09:00-10:15 | 10:30-11:30 | 13:30-15:00 | 21:00-23:00`
 
 ### Add scheduler
 

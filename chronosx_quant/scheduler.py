@@ -7,6 +7,11 @@ import threading
 import pandas_market_calendars as mcal
 import pandas as pd
 
+# Import custom calendars for registration side effects. Their classes are
+# registered into pandas_market_calendars via metaclass hooks when imported, so
+# `mcal.get_calendar(...)` can resolve names like `CN_FUTURES_0230`.
+from . import calendars as _custom_calendars  # noqa: F401
+
 """
 Scheduler abstractions for trading-calendar queries.
 
@@ -105,15 +110,16 @@ class SchedulerTemplate:
 
 class StaticMinuteScheduler(SchedulerTemplate):
     """
-    Load last 3 years and next 3 year schedule, let it crash if time is not in the schedule
+    Load last 4 years and next 3 year schedule, let it crash if time is not in the schedule
 
     For performance, only support 1 minute step, prepare all timeline when init, no more updates
     """
 
     def __init__(self, calendar_name: str):
         self.calendar = mcal.get_calendar(calendar_name)
+        # TODO: not a good impl, support config?
         self.schedule = self.calendar.schedule(
-            pd.Timestamp.now() - pd.Timedelta(days=365 * 3),
+            pd.Timestamp.now() - pd.Timedelta(days=365 * 4),
             pd.Timestamp.now() + pd.Timedelta(days=365 * 3),
             tz=self.calendar.tz,
         )
@@ -122,31 +128,8 @@ class StaticMinuteScheduler(SchedulerTemplate):
             self.schedule["market_close"],
             closed="left",
         )
-        if "break_start" not in self.schedule.columns:
-            self.intervals = self.session_intervals
-        else:
-            # SSE has one break per trading day; multi-break calendars are not
-            # handled here.
-            starts_1 = self.schedule["market_open"]
-            ends_1 = self.schedule["break_start"]
-
-            starts_2 = self.schedule["break_end"]
-            ends_2 = self.schedule["market_close"]
-
-            # Flatten the split sessions into a single list of intervals.
-            all_starts = pd.concat([starts_1, starts_2]).dropna().sort_values()
-            all_ends = pd.concat([ends_1, ends_2]).dropna().sort_values()
-
-            # Build the interval index once so ordering stays strictly increasing
-            # and duplicates are avoided.
-            self.intervals = pd.IntervalIndex.from_arrays(
-                all_starts, all_ends, closed="left"
-            )
-
-        # date_range time is the end time, but we want the start time, so we need to shift back by one step
-        self.trading_minutes = mcal.date_range(
-            self.schedule, frequency="1min"
-        ) - pd.Timedelta("1min")
+        self.intervals = self._build_trading_intervals()
+        self.trading_minutes = self._build_trading_minutes()
 
     @property
     def tz(self):
@@ -154,6 +137,106 @@ class StaticMinuteScheduler(SchedulerTemplate):
 
     def __repr__(self):
         return f"StaticMinuteScheduler({self.calendar.name}, end={self.schedule.index[-1]})"
+
+    def _build_trading_intervals(self) -> pd.IntervalIndex:
+        """
+        Build intraday trading intervals from any regular open/close event columns.
+
+        The schedule columns are already ordered by market time, so we can walk each
+        row, pair every opening event with the next closing event, and support any
+        number of fixed breaks without hard-coding specific column names.
+        """
+        event_columns = [
+            column
+            for column in self.schedule.columns
+            if column in self.calendar.open_close_map
+        ]
+        if event_columns == ["market_open", "market_close"]:
+            return self.session_intervals
+
+        interval_starts = []
+        interval_ends = []
+
+        for _, trading_day in self.schedule[event_columns].iterrows():
+            start_time = None
+
+            for column, event_time in trading_day.items():
+                if pd.isna(event_time):
+                    continue
+
+                if self.calendar.open_close_map[column]:
+                    start_time = event_time
+                    continue
+
+                if start_time is None:
+                    raise ValueError(
+                        f"Schedule for {self.calendar.name} closes at {column} "
+                        "before any opening event."
+                    )
+
+                interval_starts.append(start_time)
+                interval_ends.append(event_time)
+                start_time = None
+
+            if start_time is not None:
+                raise ValueError(
+                    f"Schedule for {self.calendar.name} has an unmatched opening event."
+                )
+
+        return pd.IntervalIndex.from_arrays(
+            pd.DatetimeIndex(interval_starts),
+            pd.DatetimeIndex(interval_ends),
+            closed="left",
+        )
+
+    def _build_trading_minutes(self) -> pd.DatetimeIndex:
+        """
+        Expand our precomputed trading intervals into one flat minute timeline.
+
+        Upstream `mcal.date_range(schedule, frequency="1min")` works for simpler
+        calendars, but it does not understand the extra open/close events we add
+        for Chronosx multi-break calendars. Instead of asking the upstream helper
+        to infer valid trading minutes from `schedule`, we already know the exact
+        valid intervals in `self.intervals`, so we expand each interval ourselves.
+
+        Concretely, for every interval like [09:00, 10:15), we create:
+        09:00, 09:01, ..., 10:14
+        and then append all interval minute ranges in chronological order.
+
+        The final flat minute index is the source of truth for:
+        - `shift`
+        - `trading_times`
+        - `previous_trading_time`
+        - `next_trading_time`
+
+        Because break minutes are never materialized here, those APIs naturally
+        skip over breaks and night-session gaps.
+        """
+        minute_ranges = []
+        one_minute = pd.Timedelta("1min")
+
+        for interval in self.intervals:
+            # Intervals are left-closed/right-open, so [09:00, 10:15) should
+            # include 10:14 but exclude 10:15.
+            interval_end = interval.right - one_minute
+            if interval_end < interval.left:
+                continue
+            minute_ranges.append(
+                pd.date_range(interval.left, interval_end, freq="1min")
+            )
+
+        if not minute_ranges:
+            return pd.DatetimeIndex([], tz=self.calendar.tz)
+
+        # Append every per-interval minute range into one monotonically
+        # increasing DatetimeIndex for fast binary search and index lookup.
+        trading_minutes = minute_ranges[0]
+        for minute_range in minute_ranges[1:]:
+            # `DatetimeIndex.append(...)` concatenates index values here, more
+            # like `list.extend(...)` than `list.append(...)`.
+            trading_minutes = trading_minutes.append(minute_range)
+
+        return trading_minutes
 
     @require_1min_step
     def shift(self, time: pd.Timestamp, delta: int, *, step: str) -> pd.Timestamp:
@@ -169,7 +252,13 @@ class StaticMinuteScheduler(SchedulerTemplate):
         # raise an error if time is not a trading time
         time_idx = self.trading_minutes.get_loc(time)
         # raise an error if out of range
-        shifted = self.trading_minutes[time_idx + delta]
+        shifted_idx = time_idx + delta
+        if shifted_idx < 0 or shifted_idx >= len(self.trading_minutes):
+            raise IndexError(
+                f"Shift result out of range for {self.calendar.name}: "
+                f"time={time}, delta={delta}"
+            )
+        shifted = self.trading_minutes[shifted_idx]
         # restore second and microsecond
         return shifted.replace(second=second, microsecond=microsecond)
 
