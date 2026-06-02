@@ -13,12 +13,12 @@ class _BaseChinaFuturesNightCalendar(SSEExchangeCalendar, ABC):
 
     aliases = []
     regular_market_times = {
-        "market_open": ((None, time(9, 0)),),
-        "break_start_1": ((None, time(10, 15)),),
-        "break_end_1": ((None, time(10, 30)),),
-        "break_start_2": ((None, time(11, 30)),),
-        "break_end_2": ((None, time(13, 30)),),
-        "break_start_3": ((None, time(15, 0)),),
+        "break_end_1": ((None, time(9, 0)),),
+        "break_start_2": ((None, time(10, 15)),),
+        "break_end_2": ((None, time(10, 30)),),
+        "break_start_3": ((None, time(11, 30)),),
+        "break_end_3": ((None, time(13, 30)),),
+        "market_close": ((None, time(15, 0)),),
     }
 
     open_close_map = {
@@ -47,31 +47,32 @@ class _BaseChinaFuturesNightCalendar(SSEExchangeCalendar, ABC):
         return regular_holidays.union(adhoc_holidays).sort_values().normalize()
 
     @cached_property
-    def _holiday_eve_dates(self):
+    def _post_holiday_trading_dates(self):
         if self._holiday_dates.empty:
             return pd.DatetimeIndex([])
 
         holiday_series = self._holiday_dates.to_series(index=self._holiday_dates)
-        holiday_block_starts = holiday_series[
-            holiday_series.diff().ne(pd.Timedelta(days=1)).fillna(True)
+        holiday_block_ends = holiday_series[
+            holiday_series.diff(-1).ne(-pd.Timedelta(days=1)).fillna(True)
         ].index
 
-        holiday_eves = []
-        for holiday_start in holiday_block_starts:
-            previous_trading_days = self.valid_days(
-                holiday_start - pd.Timedelta(days=7),
-                holiday_start - pd.Timedelta(days=1),
+        post_holiday_trading_days = []
+        for holiday_end in holiday_block_ends:
+            next_trading_days = self.valid_days(
+                holiday_end + pd.Timedelta(days=1),
+                holiday_end + pd.Timedelta(days=7),
                 tz=None,
             )
-            if len(previous_trading_days) > 0:
-                holiday_eves.append(previous_trading_days[-1])
+            if len(next_trading_days) > 0:
+                post_holiday_trading_days.append(next_trading_days[0])
 
-        return pd.DatetimeIndex(holiday_eves).drop_duplicates().sort_values()
+        return pd.DatetimeIndex(post_holiday_trading_days).drop_duplicates().sort_values()
 
     @property
-    def special_closes_adhoc(self):
-        # No night session is held on the trading day immediately before a holiday block.
-        return [(time(15, 0), self._holiday_eve_dates)]
+    def special_opens_adhoc(self):
+        # The first trading day after a holiday block has no prior-night session,
+        # so that session starts from the daytime reopen at 09:00.
+        return [(time(9, 0), self._post_holiday_trading_dates)]
 
     @property
     @abstractmethod
@@ -82,9 +83,9 @@ class _BaseChinaFuturesNightCalendar(SSEExchangeCalendar, ABC):
 class ChinaFuturesNight0230Calendar(_BaseChinaFuturesNightCalendar):
     aliases = ["CN_FUTURES_0230", "SC.INE AG.SHF", "SC.INE", "AG.SHF"]
     regular_market_times = {
+        "market_open": ((None, time(21, 0), -1),),
+        "break_start_1": ((None, time(2, 30)),),
         **_BaseChinaFuturesNightCalendar.regular_market_times,
-        "break_end_3": ((None, time(21, 0)),),
-        "market_close": ((None, time(2, 30), 1),),
     }
 
     @property
@@ -99,9 +100,9 @@ class ChinaFuturesNight0230Calendar(_BaseChinaFuturesNightCalendar):
 class ChinaFuturesNight0100Calendar(_BaseChinaFuturesNightCalendar):
     aliases = ["CN_FUTURES_0100", "BC.INE CU.SHF", "BC.INE", "CU.SHF"]
     regular_market_times = {
+        "market_open": ((None, time(21, 0), -1),),
+        "break_start_1": ((None, time(1, 0)),),
         **_BaseChinaFuturesNightCalendar.regular_market_times,
-        "break_end_3": ((None, time(21, 0)),),
-        "market_close": ((None, time(1, 0), 1),),
     }
 
     @property
@@ -116,9 +117,9 @@ class ChinaFuturesNight0100Calendar(_BaseChinaFuturesNightCalendar):
 class ChinaFuturesNight2300Calendar(_BaseChinaFuturesNightCalendar):
     aliases = ["CN_FUTURES_2300", "DCE", "CZC"]
     regular_market_times = {
+        "market_open": ((None, time(21, 0), -1),),
+        "break_start_1": ((None, time(23, 0), -1),),
         **_BaseChinaFuturesNightCalendar.regular_market_times,
-        "break_end_3": ((None, time(21, 0)),),
-        "market_close": ((None, time(23, 0)),),
     }
 
     @property

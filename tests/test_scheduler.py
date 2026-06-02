@@ -105,25 +105,27 @@ def test_builtin_china_futures_calendar_aliases_and_close_boundaries(
     def ts(value):
         return pd.Timestamp(value, tz=scheduler.tz)
 
+    # A China futures trading day starts from the previous evening session.
+    assert not scheduler.is_trading(ts("2026-03-09 20:59:00"))
+    assert scheduler.is_trading(ts("2026-03-09 21:00:00"))
+    assert not scheduler.is_trading(ts(first_non_trading_minute))
+    assert scheduler.is_trading(ts(last_trading_minute))
+
     # Shared daytime breaks should stay non-trading across all three calendars.
     assert scheduler.is_trading(ts("2026-03-10 09:30:00"))
     assert not scheduler.is_trading(ts("2026-03-10 10:20:00"))
     assert scheduler.is_trading(ts("2026-03-10 10:30:00"))
     assert not scheduler.is_trading(ts("2026-03-10 12:00:00"))
     assert scheduler.is_trading(ts("2026-03-10 13:30:00"))
-
-    # The night session should reopen at 21:00 and stop exactly at each calendar's close.
-    assert not scheduler.is_trading(ts("2026-03-10 20:59:00"))
-    assert scheduler.is_trading(ts("2026-03-10 21:00:00"))
-    assert scheduler.is_trading(ts(last_trading_minute))
-    assert not scheduler.is_trading(ts(first_non_trading_minute))
+    assert scheduler.is_trading(ts("2026-03-10 14:59:00"))
+    assert not scheduler.is_trading(ts("2026-03-10 15:00:00"))
 
 
 @pytest.mark.parametrize(
     "calendar_name",
     ["CN_FUTURES_0230", "CN_FUTURES_0100", "CN_FUTURES_2300"],
 )
-def test_builtin_china_futures_calendar_has_no_night_session_before_holidays(
+def test_builtin_china_futures_calendar_has_no_night_session_after_holidays(
     calendar_name,
 ):
     scheduler = StaticMinuteScheduler(calendar_name)
@@ -131,16 +133,55 @@ def test_builtin_china_futures_calendar_has_no_night_session_before_holidays(
     def ts(value):
         return pd.Timestamp(value, tz=scheduler.tz)
 
-    # 2026-09-25 is an SSE holiday, so 2026-09-24 should close at 15:00
-    # with no 21:00 night-session reopen.
+    # 2026-09-25 is an SSE holiday, so the first trading day after that holiday
+    # block should start at 09:00 with no prior-night reopen.
     assert scheduler.is_trading(ts("2026-09-24 14:59:00"))
     assert not scheduler.is_trading(ts("2026-09-24 15:00:00"))
-    assert not scheduler.is_trading(ts("2026-09-24 20:59:00"))
-    assert not scheduler.is_trading(ts("2026-09-24 21:00:00"))
+    assert not scheduler.is_trading(ts("2026-09-27 20:59:00"))
+    assert not scheduler.is_trading(ts("2026-09-27 21:00:00"))
     assert scheduler.next_trading_time(
-        ts("2026-09-24 21:00:00"), step="1min", inclusive=True
+        ts("2026-09-27 21:00:00"), step="1min", inclusive=True
     ) == ts("2026-09-28 09:00:00")
+    assert scheduler.to_session_start(ts("2026-09-28 09:30:00")) == ts(
+        "2026-09-28 09:00:00"
+    )
 
+
+@pytest.mark.parametrize(
+    ("holiday_name", "nightless_date", "reopen_date"),
+    [
+        ("new_year", "2025-12-31", "2026-01-05"),
+        ("spring_festival", "2026-02-13", "2026-02-24"),
+        ("qingming", "2026-04-03", "2026-04-07"),
+        ("labor_day", "2026-04-30", "2026-05-06"),
+        ("dragon_boat", "2026-06-18", "2026-06-22"),
+        ("mid_autumn", "2026-09-24", "2026-09-28"),
+        ("national_day", "2026-09-30", "2026-10-08"),
+    ],
+)
+@pytest.mark.parametrize(
+    "calendar_name",
+    ["CN_FUTURES_0230", "CN_FUTURES_0100", "CN_FUTURES_2300"],
+)
+def test_builtin_china_futures_calendars_follow_2026_holiday_night_session_notices(
+    calendar_name, holiday_name, nightless_date, reopen_date
+):
+    scheduler = StaticMinuteScheduler(calendar_name)
+
+    def ts(value):
+        return pd.Timestamp(value, tz=scheduler.tz)
+
+    assert scheduler.is_trading(ts(f"{nightless_date} 14:59:00"))
+    assert not scheduler.is_trading(ts(f"{nightless_date} 15:00:00"))
+    assert not scheduler.is_trading(ts(f"{nightless_date} 20:59:00"))
+    assert not scheduler.is_trading(ts(f"{nightless_date} 21:00:00"))
+
+    assert scheduler.next_trading_time(
+        ts(f"{nightless_date} 21:00:00"), step="1min", inclusive=True
+    ) == ts(f"{reopen_date} 09:00:00"), holiday_name
+    assert scheduler.to_session_start(ts(f"{reopen_date} 09:30:00")) == ts(
+        f"{reopen_date} 09:00:00"
+    ), holiday_name
 
 @pytest.mark.parametrize(
     "calendar_name",
@@ -156,8 +197,11 @@ def test_builtin_china_futures_calendar_has_no_night_session_on_2024_12_31(
 
     assert scheduler.is_trading(ts("2024-12-31 14:59:00"))
     assert not scheduler.is_trading(ts("2024-12-31 15:00:00"))
-    assert not scheduler.is_trading(ts("2024-12-31 20:59:00"))
-    assert not scheduler.is_trading(ts("2024-12-31 21:00:00"))
+    assert not scheduler.is_trading(ts("2025-01-01 20:59:00"))
+    assert not scheduler.is_trading(ts("2025-01-01 21:00:00"))
+    assert scheduler.next_trading_time(
+        ts("2025-01-01 21:00:00"), step="1min", inclusive=True
+    ) == ts("2025-01-02 09:00:00")
 
 
 @pytest.mark.parametrize(
@@ -212,6 +256,46 @@ def test_builtin_china_futures_calendar_shift(
             ChronoTime(night_last).shift(1).isoformat()
             == ts(next_session_first).isoformat()
         )
+
+
+@pytest.mark.parametrize(
+    (
+        "calendar_name",
+        "trading_time",
+        "expected_session_start",
+        "expected_session_end",
+    ),
+    [
+        (
+            "CN_FUTURES_0230",
+            "2026-03-10 10:00:00",
+            "2026-03-09 21:00:00",
+            "2026-03-10 15:00:00",
+        ),
+        (
+            "CN_FUTURES_0100",
+            "2026-03-10 10:00:00",
+            "2026-03-09 21:00:00",
+            "2026-03-10 15:00:00",
+        ),
+        (
+            "CN_FUTURES_2300",
+            "2026-03-10 10:00:00",
+            "2026-03-09 21:00:00",
+            "2026-03-10 15:00:00",
+        ),
+    ],
+)
+def test_builtin_china_futures_calendar_session_boundaries(
+    calendar_name, trading_time, expected_session_start, expected_session_end
+):
+    scheduler = StaticMinuteScheduler(calendar_name)
+
+    def ts(value):
+        return pd.Timestamp(value, tz=scheduler.tz)
+
+    assert scheduler.to_session_start(ts(trading_time)) == ts(expected_session_start)
+    assert scheduler.to_session_end(ts(trading_time)) == ts(expected_session_end)
 
 
 @pytest.mark.parametrize(

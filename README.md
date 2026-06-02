@@ -115,15 +115,18 @@ For SHF/DCE in China, calendars have multiple breaks. These three built-in varia
 
 - `CN_FUTURES_0230`
   aliases: `SC.INE AG.SHF`, `SC.INE`, `AG.SHF`
-  hours: `09:00-10:15 | 10:30-11:30 | 13:30-15:00 | 21:00-02:30+1`
+  session: previous day `21:00` to trading day `15:00`
+  hours: `21:00-02:30 | 09:00-10:15 | 10:30-11:30 | 13:30-15:00`
 
 - `CN_FUTURES_0100`
   aliases: `BC.INE CU.SHF`, `BC.INE`, `CU.SHF`
-  hours: `09:00-10:15 | 10:30-11:30 | 13:30-15:00 | 21:00-01:00+1`
+  session: previous day `21:00` to trading day `15:00`
+  hours: `21:00-01:00 | 09:00-10:15 | 10:30-11:30 | 13:30-15:00`
 
 - `CN_FUTURES_2300`
   aliases: `DCE/CZC`, `DCE`, `CZC`
-  hours: `09:00-10:15 | 10:30-11:30 | 13:30-15:00 | 21:00-23:00`
+  session: previous day `21:00` to trading day `15:00`
+  hours: `21:00-23:00 | 09:00-10:15 | 10:30-11:30 | 13:30-15:00`
 
 ### Add scheduler
 
