@@ -20,6 +20,24 @@ The scheduler implementation is customizable, but the default runtime scheduler 
 for performance.
 """
 
+DEFAULT_CALENDAR_NAME = "SSE"
+DEFAULT_SCHEDULE_START = "2022-01-01"
+
+
+def get_default_calendar_name() -> str:
+    return os.getenv("CALENDAR_NAME", DEFAULT_CALENDAR_NAME)
+
+
+def get_schedule_start() -> pd.Timestamp:
+    return pd.Timestamp(os.getenv("SCHEDULE_START", DEFAULT_SCHEDULE_START))
+
+
+def get_schedule_end() -> pd.Timestamp:
+    configured_end = os.getenv("SCHEDULE_END")
+    if configured_end:
+        return pd.Timestamp(configured_end)
+    return pd.Timestamp.now() + pd.DateOffset(years=3)
+
 
 def require_1min_step(func):
     @wraps(func)
@@ -45,7 +63,7 @@ class SchedulerManager:
             # CME Globex Crypto
             # other calendars haven't been checked
             SchedulerManager._storage.schedule = StaticMinuteScheduler(
-                os.getenv("CALENDAR_NAME", "SSE")
+                get_default_calendar_name()
             )
         return SchedulerManager._storage.schedule
 
@@ -110,17 +128,16 @@ class SchedulerTemplate:
 
 class StaticMinuteScheduler(SchedulerTemplate):
     """
-    Load last 4 years and next 3 year schedule, let it crash if time is not in the schedule
+    Load a fixed schedule window and let it crash if time is not in the schedule.
 
     For performance, only support 1 minute step, prepare all timeline when init, no more updates
     """
 
     def __init__(self, calendar_name: str):
         self.calendar = mcal.get_calendar(calendar_name)
-        # TODO: not a good impl, support config?
         self.schedule = self.calendar.schedule(
-            pd.Timestamp.now() - pd.Timedelta(days=365 * 4),
-            pd.Timestamp.now() + pd.Timedelta(days=365 * 3),
+            get_schedule_start(),
+            get_schedule_end(),
             tz=self.calendar.tz,
         )
         self.session_intervals = pd.IntervalIndex.from_arrays(

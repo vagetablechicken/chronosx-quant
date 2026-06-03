@@ -37,6 +37,8 @@ from chronosx_quant.time import ChronoTime
 import pandas as pd
 
 # use CALENDAR_NAME to select default calendar, e.g. SSE
+# use SCHEDULE_START / SCHEDULE_END to control the preloaded schedule window
+# defaults: SCHEDULE_START=2022-01-01, SCHEDULE_END=now+3y
 time = ChronoTime.now()
 time = ChronoTime("2026-03-09 11:29:00+08:00")
 
@@ -178,6 +180,7 @@ Build and run with Docker:
 ```bash
 docker build -t chronosx-quant .
 docker run --rm -p 8000:8000 -e CALENDAR_NAME=SSE chronosx-quant
+docker run --rm -p 8000:8000 -e CALENDAR_NAME=SSE -e SCHEDULE_START=2022-01-01 -e SCHEDULE_END=2030-12-31 chronosx-quant
 ```
 
 Run locally without Docker:
@@ -185,6 +188,12 @@ Run locally without Docker:
 ```bash
 uv run --group docker python -m docker.service
 ```
+
+Service schedule window:
+
+- `SCHEDULE_START` defaults to `2022-01-01`
+- `SCHEDULE_END` defaults to `now + 3 years`
+- if you set `SCHEDULE_END`, use any value `pandas.Timestamp(...)` can parse, for example `2030-12-31`
 
 Health check:
 

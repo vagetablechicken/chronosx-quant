@@ -12,12 +12,16 @@ from prometheus_client import CollectorRegistry, Gauge, generate_latest
 
 from chronosx_quant import __version__
 from chronosx_quant.preview import build_calendar_preview
-from chronosx_quant.scheduler import SchedulerManager, StaticMinuteScheduler
+from chronosx_quant.scheduler import (
+    SchedulerManager,
+    StaticMinuteScheduler,
+    get_default_calendar_name,
+)
 from chronosx_quant.time import ChronoTime
 
 DEFAULT_HOST = os.getenv("HOST", "0.0.0.0")
 DEFAULT_PORT = int(os.getenv("PORT", "8000"))
-DEFAULT_CALENDAR_NAME = os.getenv("CALENDAR_NAME", "SSE")
+DEFAULT_CALENDAR_NAME = get_default_calendar_name()
 
 _SCHEDULER_CACHE: dict[str, StaticMinuteScheduler] = {}
 _SCHEDULER_LOCK = Lock()
