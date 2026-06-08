@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import wraps
 import inspect
 import io
 import time
@@ -34,7 +35,7 @@ class PerformanceRegistry:
     def get_report(cls, name: str):
         if name in cls._metrics:
             di = cls._metrics[name]
-            return f"{name}: sum={di.sum()}, count={di.n_values}, mean={di.mean()}, p50={di.percentile(50)}, p90={di.percentile(90)}, p99={di.percentile(99)}, p999={di.percentile(99.9)}, p9999={di.percentile(99.99)}"
+            return f"{name}: sum={di.sum()}, count={di.n_values}, mean={di.mean()}, p50={di.percentile(50)}, p90={di.percentile(90)}, p99={di.percentile(99)}, p999={di.percentile(99.9)}, p9999={di.percentile(99.99)}, max={di.max()}"
         return f"{name}: not found"
 
     @classmethod
@@ -58,6 +59,33 @@ class performance(ContextDecorator):
         # 当作为装饰器使用时，如果没传 name，自动获取函数名
         if self.name is None:
             self.name = func.__qualname__
+
+        # if generator function
+        if inspect.isgeneratorfunction(func):
+
+            @wraps(func)
+            def generator_wrapper(*args, **kwargs):
+                gen = func(*args, **kwargs)
+                total_source_time = 0.0
+                try:
+                    while True:
+                        start = time.perf_counter()
+                        try:
+                            item = next(gen)
+                        except StopIteration:
+                            total_source_time += time.perf_counter() - start
+                            break
+                        except Exception:
+                            total_source_time += time.perf_counter() - start
+                            raise
+                        total_source_time += time.perf_counter() - start
+                        yield item  # 挂起并交出控制权，暂停计时
+                finally:
+                    elapsed_ms = total_source_time * 1000
+                    PerformanceRegistry.update(self.name, elapsed_ms)
+
+            return generator_wrapper
+        # if normal function
         return super().__call__(func)
 
     def __enter__(self):
