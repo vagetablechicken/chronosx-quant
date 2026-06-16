@@ -292,10 +292,22 @@ class StaticMinuteScheduler(SchedulerTemplate):
         """
         Return the signed trading-day distance between `start` and `end`.
 
-        The delta is based on calendar dates in the scheduler timezone, so intraday
-        time does not matter. If either endpoint falls on a non-trading date, that
+        This is a coarse day-level statistic, not an exact measure of trading-time
+        duration. It only looks at calendar dates in the scheduler timezone, so
+        intraday time does not matter and it does not care whether the timestamp
+        covers a full trading session.
+
+        Counting uses trading-day dates in a left-closed, right-closed interval:
+        [start_day, end_day]. In practice both endpoints are included if those
+        dates are trading days; if an endpoint falls on a non-trading date, that
         date contributes 0. Order is preserved: forward ranges are positive and
         backward ranges are negative.
+
+        Examples:
+        - same trading day -> 1
+        - Tuesday to Thursday across three trading dates -> 3
+        - Monday back to previous Friday -> -2
+        - same non-trading day -> 0
         """
         start_day = start.normalize().tz_localize(None)
         end_day = end.normalize().tz_localize(None)
@@ -353,7 +365,7 @@ class StaticMinuteScheduler(SchedulerTemplate):
 
         if idx == len(close_times):
             return False
-            
+
         # 2. Check if this session starts BEFORE the day ends
         return self.schedule["market_open"].iloc[idx] <= day_end
 
@@ -366,7 +378,7 @@ class StaticMinuteScheduler(SchedulerTemplate):
         idx = self.session_intervals.get_indexer([time])[0]
         if idx == -1:
             raise ValueError(f"Time {time} is not in trading interval")
-        
+
         return self.schedule.iloc[idx]
 
     def to_session_end(self, time: pd.Timestamp) -> pd.Timestamp:

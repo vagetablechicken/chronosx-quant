@@ -10,11 +10,12 @@ CALENDARS = ["SSE", "CME Globex Crypto", "ICE", "CN_FUTURES_2300"]
 @pytest.fixture(params=CALENDARS)
 def switch_scheduler(request):
     """
-    自动为每个测试用例切换 Scheduler。
-    request.param 会依次取得 CALENDARS 里的值。
+    Switch the active scheduler for each benchmark case.
+
+    ``request.param`` iterates over the entries in ``CALENDARS``.
     """
     name = request.param
-    # 假设你的 StaticMinuteScheduler 接受名称初始化
+    # The benchmark suite constructs schedulers by calendar name.
     scheduler = StaticMinuteScheduler(name)
 
     with SchedulerManager.use_scheduler(scheduler):

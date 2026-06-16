@@ -116,17 +116,17 @@ Chronosx calling pattern when using them:
 For SHF/DCE in China, calendars have multiple breaks. These three built-in variants are available:
 
 - `CN_FUTURES_0230`
-  aliases: `SC.INE AG.SHF`, `SC.INE`, `AG.SHF`
+  aliases: `SC.INE`, `AG.SHF`
   session: previous day `21:00` to trading day `15:00`
   hours: `21:00-02:30 | 09:00-10:15 | 10:30-11:30 | 13:30-15:00`
 
 - `CN_FUTURES_0100`
-  aliases: `BC.INE CU.SHF`, `BC.INE`, `CU.SHF`
+  aliases: `BC.INE`, `CU.SHF`
   session: previous day `21:00` to trading day `15:00`
   hours: `21:00-01:00 | 09:00-10:15 | 10:30-11:30 | 13:30-15:00`
 
 - `CN_FUTURES_2300`
-  aliases: `DCE/CZC`, `DCE`, `CZC`
+  aliases: `DCE`, `CZC`
   session: previous day `21:00` to trading day `15:00`
   hours: `21:00-23:00 | 09:00-10:15 | 10:30-11:30 | 13:30-15:00`
 
@@ -270,3 +270,76 @@ You can scrape `/metrics` from Prometheus and alert with:
 
 - `chronosx_trading_day == 1` when alerts should only run on trading days.
 - `chronosx_trading_time == 1` when alerts must be active only during market hours.
+
+## Performance Design
+
+Chronosx uses `HdrHistogram` as the profiling backend for `performance`
+instead of `TDigest`.
+
+This choice is intentional: our profiling data is execution latency, measured in
+microseconds, always positive, and expected to stay within a configurable but
+bounded range. That shape matches `HdrHistogram` very well.
+
+Why `HdrHistogram` fits this project:
+
+- latency is recorded in integer `us`, so the histogram keeps a natural
+  time-unit representation instead of approximating around floating-point
+  centroids
+- high-percentile queries such as `p99`, `p999`, and `p9999` are a first-class
+  use case for runtime profiling, and `HdrHistogram` is built for this style of
+  tail-latency analysis
+- writes and percentile reads are both very fast, which is important when the
+  profiler itself should add as little overhead as possible
+- the storage model is predictable once the trackable range and significant
+  figures are chosen
+
+Why not `TDigest` by default:
+
+- `TDigest` is more general-purpose and is excellent when the value range is
+  unknown, highly dynamic, or needs to be merged across distributed nodes
+- that flexibility is less important for this library, because function latency
+  is already naturally modeled as bounded positive durations
+- for our use case, the extra abstraction of centroid-based summaries is not as
+  compelling as keeping direct microsecond-scale latency buckets
+
+Configuration model:
+
+- the default profile remains microsecond-based: `1 us` minimum,
+  `60 s` maximum, `3` significant figures
+- you can override the global default through
+  `PerformanceRegistry.configure_default(...)`
+- you can override a specific metric through `@performance(...)` or
+  `with performance(...)`, including `min_value_us`, `max_value_us`, and
+  `significant_figures`
+
+Why `performance` does not use `ContextDecorator`:
+
+- Chronosx wants one API that works as both a decorator and a `with` block, but
+  it does not want to share mutable timing state between those two modes
+- a plain `ContextDecorator` style implementation usually stores `start_time`
+  on `self`, which is easy to reason about for a single `with` block, but is
+  much easier to misuse once the same decorator object is entered by concurrent
+  calls
+- in Chronosx, decorated functions keep timing state in the local wrapper call
+  frame, so every invocation gets an independent `start_time`
+- `with performance(...)` still creates a fresh instance per `with` statement,
+  so context-manager usage also gets isolated state naturally
+- this separation keeps the API simple while avoiding accidental cross-thread or
+  re-entrant state corruption from a shared timing attribute
+
+Thread-safety model:
+
+- metric aggregation is shared globally by name, but per-call timing state is
+  not shared
+- decorator mode is safe for concurrent calls because timing lives in local
+  variables inside the wrapper, not on the profiler object
+- context-manager mode is safe because each `with performance(...)` expression
+  instantiates a new profiler object before entering the block
+- the design goal is not lock-free mutation of every backend detail, but to
+  avoid the much more common bug where overlapping calls overwrite each other's
+  `start_time`
+
+Overall, the design is optimized for practical in-process latency profiling:
+`HdrHistogram` gives Chronosx efficient microsecond-level percentile tracking,
+and the custom `performance` implementation keeps per-call timing state
+isolated so the same API remains straightforward under concurrent use.

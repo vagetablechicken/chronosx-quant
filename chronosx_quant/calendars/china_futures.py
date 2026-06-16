@@ -66,7 +66,44 @@ class _BaseChinaFuturesNightCalendar(SSEExchangeCalendar, ABC):
             if len(next_trading_days) > 0:
                 post_holiday_trading_days.append(next_trading_days[0])
 
-        return pd.DatetimeIndex(post_holiday_trading_days).drop_duplicates().sort_values()
+        return (
+            pd.DatetimeIndex(post_holiday_trading_days).drop_duplicates().sort_values()
+        )
+
+    @cached_property
+    def _monday_trading_dates(self):
+        trading_days = self.valid_days("1990-01-01", "2100-12-31", tz=None)
+        monday_trading_days = trading_days[trading_days.weekday == 0]
+        return monday_trading_days.difference(
+            self._post_holiday_trading_dates
+        ).sort_values()
+
+    @property
+    def _special_market_open_adhoc(self):
+        return []
+
+    @property
+    def _special_break_start_1_adhoc(self):
+        return []
+
+    def get_special_times(self, market_time):
+        if market_time == "market_open":
+            return [*super().get_special_times(market_time), *self.special_opens]
+        if market_time == "market_close":
+            return [*super().get_special_times(market_time), *self.special_closes]
+        return super().get_special_times(market_time)
+
+    def get_special_times_adhoc(self, market_time):
+        if market_time == "market_open":
+            return [*self._special_market_open_adhoc, *self.special_opens_adhoc]
+        if market_time == "market_close":
+            return [
+                *super().get_special_times_adhoc(market_time),
+                *self.special_closes_adhoc,
+            ]
+        if market_time == "break_start_1":
+            return [*self._special_break_start_1_adhoc]
+        return super().get_special_times_adhoc(market_time)
 
     @property
     def special_opens_adhoc(self):
@@ -96,6 +133,14 @@ class ChinaFuturesNight0230Calendar(_BaseChinaFuturesNightCalendar):
     def full_name(self):
         return "China Futures Night Session 02:30 Close"
 
+    @property
+    def _special_market_open_adhoc(self):
+        return [((time(21, 0), -3), self._monday_trading_dates)]
+
+    @property
+    def _special_break_start_1_adhoc(self):
+        return [((time(2, 30), -2), self._monday_trading_dates)]
+
 
 class ChinaFuturesNight0100Calendar(_BaseChinaFuturesNightCalendar):
     aliases = ["CN_FUTURES_0100", "BC.INE CU.SHF", "BC.INE", "CU.SHF"]
@@ -113,6 +158,14 @@ class ChinaFuturesNight0100Calendar(_BaseChinaFuturesNightCalendar):
     def full_name(self):
         return "China Futures Night Session 01:00 Close"
 
+    @property
+    def _special_market_open_adhoc(self):
+        return [((time(21, 0), -3), self._monday_trading_dates)]
+
+    @property
+    def _special_break_start_1_adhoc(self):
+        return [((time(1, 0), -2), self._monday_trading_dates)]
+
 
 class ChinaFuturesNight2300Calendar(_BaseChinaFuturesNightCalendar):
     aliases = ["CN_FUTURES_2300", "DCE", "CZC"]
@@ -129,3 +182,11 @@ class ChinaFuturesNight2300Calendar(_BaseChinaFuturesNightCalendar):
     @property
     def full_name(self):
         return "China Futures Night Session 23:00 Close"
+
+    @property
+    def _special_market_open_adhoc(self):
+        return [((time(21, 0), -3), self._monday_trading_dates)]
+
+    @property
+    def _special_break_start_1_adhoc(self):
+        return [((time(23, 0), -3), self._monday_trading_dates)]
