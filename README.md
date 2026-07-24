@@ -167,7 +167,7 @@ Benchmark preview:
 - test machine: Intel Core i9-14900HX with 5600 MT/s memory
 - most operations are in the `7-100 us` range
 - `trading_times` is around `40-45 us`
-- the slowest operations are `to_session_start` and `to_session_end`, typically around `0.2-0.26 ms`
+- the slowest operations are `to_session_start` and `to_session_end`, typically around `0.2-0.26 ms`——TODO
 - no benchmark in the current preview has an average latency above `1 ms`
 - benchmark results may vary across machines and Python versions
 

@@ -58,6 +58,24 @@ def test_with_performance_accumulates_total_time_in_registry():
     assert "max=12007" in report
 
 
+def test_report_format_does_not_include_indentation_spaces():
+    perf_counter_values = iter([10.0, 10.005])
+
+    with patch.object(
+        performance_module.time,
+        "perf_counter",
+        side_effect=lambda: next(perf_counter_values),
+    ):
+        with performance("format-check"):
+            pass
+
+    report = PerformanceRegistry.get_report("format-check")
+
+    assert "count=1, mean=" in report
+    assert ", p50=" in report
+    assert ", p90=" in report
+
+
 def test_normal_function_caps_elapsed_time_at_sixty_seconds_in_us():
     perf_counter_values = iter([10.0, 75.0])
     backend = Mock()

@@ -118,7 +118,7 @@ class _BaseChinaFuturesNightCalendar(SSEExchangeCalendar, ABC):
 
 
 class ChinaFuturesNight0230Calendar(_BaseChinaFuturesNightCalendar):
-    aliases = ["CN_FUTURES_0230", "SC.INE AG.SHF", "SC.INE", "AG.SHF"]
+    aliases = ["CN_FUTURES_0230", "SC.INE", "AG.SHF"]
     regular_market_times = {
         "market_open": ((None, time(21, 0), -1),),
         "break_start_1": ((None, time(2, 30)),),
@@ -143,7 +143,7 @@ class ChinaFuturesNight0230Calendar(_BaseChinaFuturesNightCalendar):
 
 
 class ChinaFuturesNight0100Calendar(_BaseChinaFuturesNightCalendar):
-    aliases = ["CN_FUTURES_0100", "BC.INE CU.SHF", "BC.INE", "CU.SHF"]
+    aliases = ["CN_FUTURES_0100", "BC.INE", "CU.SHF"]
     regular_market_times = {
         "market_open": ((None, time(21, 0), -1),),
         "break_start_1": ((None, time(1, 0)),),

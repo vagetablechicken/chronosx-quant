@@ -45,9 +45,10 @@ chronosx-preview = "chronosx_quant.preview:main"
 
 [tool.pytest.ini_options]
 addopts = "-s -v"
+pythonpath = ["src"]
 
 [tool.hatch.version]
-path = "chronosx_quant/__init__.py"
+path = "src/chronosx_quant/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["chronosx_quant"]
+packages = ["src"]

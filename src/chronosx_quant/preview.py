@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import pandas as pd
-from chronosx_quant.scheduler import SchedulerManager, StaticMinuteScheduler
+
+from . import __version__
+from .scheduler import SchedulerManager, StaticMinuteScheduler
 
 
 def build_calendar_preview(
@@ -44,7 +46,8 @@ def main():
     import pandas_market_calendars as mcal
 
     print(
-        f"dependency: pandas={pd.__version__}, pandas_market_calendars={mcal.__version__}"
+        f"chronosx_quant={__version__}, dependency: "
+        f"pandas={pd.__version__}, pandas_market_calendars={mcal.__version__}"
     )
     calendar_preview("SSE")
     calendar_preview("CME Globex Crypto")

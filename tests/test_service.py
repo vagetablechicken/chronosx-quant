@@ -2,18 +2,19 @@ import sys
 import types
 
 import pytest
-from fastapi import HTTPException
-from fastapi.responses import PlainTextResponse
-from chronosx_quant import __version__
 
 # Pandas imports pyarrow opportunistically; a broken local pyarrow wheel should
 # not prevent service tests from collecting.
 sys.modules.setdefault("pyarrow", types.SimpleNamespace(__version__="0.0.0"))
 
-fastapi = pytest.importorskip("fastapi")
+pytest.importorskip("fastapi")
 pytest.importorskip("prometheus_client")
 pytest.importorskip("pandas_market_calendars")
 
+from fastapi import HTTPException  # noqa: E402
+from fastapi.responses import PlainTextResponse  # noqa: E402
+
+from chronosx_quant import __version__  # noqa: E402
 from docker.service import app, build_metrics_payload, build_query_payload  # noqa: E402
 
 

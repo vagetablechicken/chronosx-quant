@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import tzinfo
 from functools import wraps
 import os
@@ -22,6 +23,20 @@ for performance.
 
 DEFAULT_CALENDAR_NAME = "SSE"
 DEFAULT_SCHEDULE_START = "2022-01-01"
+
+
+@dataclass(frozen=True)
+class SchedulerInfo:
+    """Size and memory statistics for a precomputed scheduler."""
+
+    intervals_count: int
+    intervals_memory_bytes: int
+    trading_minutes_count: int
+    trading_minutes_memory_bytes: int
+
+    @property
+    def total_memory_bytes(self) -> int:
+        return self.intervals_memory_bytes + self.trading_minutes_memory_bytes
 
 
 def get_default_calendar_name() -> str:
@@ -109,10 +124,10 @@ class SchedulerTemplate:
     def trading_day_delta(self, start: pd.Timestamp, end: pd.Timestamp) -> int: ...
     def previous_trading_time(
         self, time: pd.Timestamp, step: str, inclusive=True
-    ) -> pd.Timestamp: ...
+    ) -> pd.Timestamp | None: ...
     def next_trading_time(
         self, time: pd.Timestamp, step: str, inclusive=True
-    ) -> pd.Timestamp: ...
+    ) -> pd.Timestamp | None: ...
 
     def is_trading(self, time: pd.Timestamp) -> bool: ...
     def is_trading_day(self, time: pd.Timestamp) -> bool:
@@ -124,6 +139,9 @@ class SchedulerTemplate:
 
     @property
     def tz(self) -> tzinfo: ...
+
+    @property
+    def info(self) -> SchedulerInfo: ...
 
 
 class StaticMinuteScheduler(SchedulerTemplate):
@@ -147,10 +165,23 @@ class StaticMinuteScheduler(SchedulerTemplate):
         )
         self.intervals = self._build_trading_intervals()
         self.trading_minutes = self._build_trading_minutes()
+        self._info = SchedulerInfo(
+            intervals_count=len(self.intervals),
+            intervals_memory_bytes=int(self.intervals.memory_usage(deep=True)),
+            trading_minutes_count=len(self.trading_minutes),
+            trading_minutes_memory_bytes=int(
+                self.trading_minutes.memory_usage(deep=True)
+            ),
+        )
 
     @property
     def tz(self):
         return self.calendar.tz
+
+    @property
+    def info(self) -> SchedulerInfo:
+        """Return cached size and memory statistics for precomputed indexes."""
+        return self._info
 
     def __repr__(self):
         return f"StaticMinuteScheduler({self.calendar.name}, end={self.schedule.index[-1]})"
@@ -323,7 +354,7 @@ class StaticMinuteScheduler(SchedulerTemplate):
     @require_1min_step
     def previous_trading_time(
         self, time: pd.Timestamp, *, step: str, inclusive: bool
-    ) -> pd.Timestamp:
+    ) -> pd.Timestamp | None:
         # inclusive, search right means > time, -1 must be <= time
         # exclusive, search left means >= time, -1 must be < time
         # TODO: binary search is quick, but time may out of range
@@ -338,7 +369,7 @@ class StaticMinuteScheduler(SchedulerTemplate):
     @require_1min_step
     def next_trading_time(
         self, time: pd.Timestamp, *, step: str, inclusive: bool
-    ) -> pd.Timestamp:
+    ) -> pd.Timestamp | None:
         # inclusive, search left means >= time
         # exclusive, search right means > time
         idx = self.trading_minutes.searchsorted(
@@ -349,8 +380,11 @@ class StaticMinuteScheduler(SchedulerTemplate):
     def is_trading(self, time: pd.Timestamp) -> bool:
         """Check if the time is a trading time."""
         # be careful to exclude break times
-        idx = self.intervals.get_indexer([time])
-        return idx[0] != -1
+        try:
+            self.intervals.get_loc(time)
+        except KeyError:
+            return False
+        return True
 
     def is_trading_day(self, time: pd.Timestamp) -> bool:
         """Check if the date is in trading, no matter if it's a trading time."""
@@ -369,23 +403,23 @@ class StaticMinuteScheduler(SchedulerTemplate):
         # 2. Check if this session starts BEFORE the day ends
         return self.schedule["market_open"].iloc[idx] <= day_end
 
-    def _fetch_interval(self, time: pd.Timestamp):
-        # We use `get_indexer` instead of `contains` for performance.
-        # `contains` evaluates all intervals and returns a full boolean mask (O(N)),
-        # which is slow over thousands of trading days. Because trading sessions
-        # do not overlap, `get_indexer` safely uses the underlying C-level
-        # IntervalTree for O(log N) lookups, providing massive speedups.
-        idx = self.session_intervals.get_indexer([time])[0]
-        if idx == -1:
-            raise ValueError(f"Time {time} is not in trading interval")
-
-        return self.schedule.iloc[idx]
+    def _get_session_loc(self, time: pd.Timestamp) -> int:
+        """Return the position of the session containing one timestamp."""
+        try:
+            return self.session_intervals.get_loc(time)
+        except KeyError:
+            raise ValueError(f"Time {time} is not in trading interval") from None
 
     def to_session_end(self, time: pd.Timestamp) -> pd.Timestamp:
         """use calendar cuz we may meet early close time before holidays"""
-        trading_day = self._fetch_interval(time)
-        return trading_day["market_close"]
+        idx = self._get_session_loc(time)
+        return self.schedule["market_close"].iloc[idx]
 
     def to_session_start(self, time: pd.Timestamp) -> pd.Timestamp:
-        trading_day = self._fetch_interval(time)
-        return trading_day["market_open"]
+        idx = self._get_session_loc(time)
+        return self.schedule["market_open"].iloc[idx]
+
+    def get_trading_date(self, time: pd.Timestamp) -> pd.Timestamp:
+        """Return the trading date of the session containing ``time``."""
+        idx = self._get_session_loc(time)
+        return self.schedule.index[idx]

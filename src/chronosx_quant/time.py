@@ -4,7 +4,7 @@ import threading
 from typing import Union
 import pandas as pd
 
-from chronosx_quant.scheduler import SchedulerManager
+from .scheduler import SchedulerManager
 
 
 class ChronoTime(pd.Timestamp):
@@ -98,40 +98,49 @@ class ChronoTime(pd.Timestamp):
             start=self, end=ChronoTime(end)
         )
 
-    def previous_trading_time(self, step: str = "1min", inclusive=True) -> ChronoTime:
+    def previous_trading_time(
+        self, step: str = "1min", inclusive=True
+    ) -> ChronoTime | None:
         """
         Return the nearest trading timestamp at or before ``self``.
 
         If ``inclusive`` is ``True`` and ``self`` is already a trading
         timestamp, return ``self``. If ``inclusive`` is ``False``, return the
-        previous trading timestamp strictly before ``self``.
+        previous trading timestamp strictly before ``self``. Return ``None`` if
+        there is no earlier trading timestamp in the loaded schedule.
         """
-        return ChronoTime(
-            SchedulerManager.get_scheduler().previous_trading_time(
-                time=self, step=step, inclusive=inclusive
-            )
+        previous_time = SchedulerManager.get_scheduler().previous_trading_time(
+            time=self, step=step, inclusive=inclusive
         )
+        return ChronoTime(previous_time) if previous_time is not None else None
 
-    def next_trading_time(self, step: str = "1min", inclusive=True) -> ChronoTime:
+    def next_trading_time(
+        self, step: str = "1min", inclusive=True
+    ) -> ChronoTime | None:
         """
         Return the nearest trading timestamp at or after ``self``.
 
         If ``inclusive`` is ``True`` and ``self`` is already a trading
         timestamp, return ``self``. If ``inclusive`` is ``False``, return the
-        next trading timestamp strictly after ``self``.
+        next trading timestamp strictly after ``self``. Return ``None`` if
+        there is no later trading timestamp in the loaded schedule.
         """
-        return ChronoTime(
-            SchedulerManager.get_scheduler().next_trading_time(
-                time=self, step=step, inclusive=inclusive
-            )
+        next_time = SchedulerManager.get_scheduler().next_trading_time(
+            time=self, step=step, inclusive=inclusive
         )
+        return ChronoTime(next_time) if next_time is not None else None
 
     def is_trading(self) -> bool:
         """Return whether this timestamp falls inside trading time."""
         return SchedulerManager.get_scheduler().is_trading(self)
 
     def is_trading_day(self) -> bool:
-        """Return whether this timestamp belongs to a trading date."""
+        """
+        Return whether this timestamp's date overlaps a trading session.
+
+        This check uses the complete session interval. Timestamps during
+        intraday breaks are accepted and treated as part of the session.
+        """
         return SchedulerManager.get_scheduler().is_trading_day(self)
 
     def to_session_start(self) -> ChronoTime:

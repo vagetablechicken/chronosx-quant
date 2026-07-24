@@ -1,5 +1,6 @@
 from contextlib import ContextDecorator
-from chronosx_quant.time import ChronoTime
+
+from .time import ChronoTime
 
 
 class travel(ContextDecorator):
