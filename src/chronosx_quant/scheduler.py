@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import tzinfo
-from functools import wraps
+from functools import cached_property, wraps
 import os
 import threading
 
@@ -29,14 +29,13 @@ DEFAULT_SCHEDULE_START = "2022-01-01"
 class SchedulerInfo:
     """Size and memory statistics for a precomputed scheduler."""
 
+    session_intervals_count: int
+    session_intervals_memory_bytes: int
     intervals_count: int
     intervals_memory_bytes: int
     trading_minutes_count: int
     trading_minutes_memory_bytes: int
-
-    @property
-    def total_memory_bytes(self) -> int:
-        return self.intervals_memory_bytes + self.trading_minutes_memory_bytes
+    total_memory_bytes: int
 
 
 def get_default_calendar_name() -> str:
@@ -163,25 +162,46 @@ class StaticMinuteScheduler(SchedulerTemplate):
             self.schedule["market_close"],
             closed="left",
         )
+        # IntervalIndex.get_loc uses pandas' generic interval lookup machinery.
+        # Sessions are already sorted and non-overlapping, so keep zero-copy
+        # nanosecond views for a much cheaper binary search on this hot path.
+        self._session_opens = self.schedule["market_open"].array
+        self._session_closes = self.schedule["market_close"].array
+        self._session_opens_ns = self._session_opens.asi8
+        self._session_closes_ns = self._session_closes.asi8
+
         self.intervals = self._build_trading_intervals()
         self.trading_minutes = self._build_trading_minutes()
-        self._info = SchedulerInfo(
-            intervals_count=len(self.intervals),
-            intervals_memory_bytes=int(self.intervals.memory_usage(deep=True)),
-            trading_minutes_count=len(self.trading_minutes),
-            trading_minutes_memory_bytes=int(
-                self.trading_minutes.memory_usage(deep=True)
-            ),
-        )
 
     @property
     def tz(self):
         return self.calendar.tz
 
-    @property
+    @cached_property
     def info(self) -> SchedulerInfo:
-        """Return cached size and memory statistics for precomputed indexes."""
-        return self._info
+        """Compute size and memory statistics once, on first access."""
+        session_intervals_memory_bytes = int(
+            self.session_intervals.memory_usage(deep=True)
+        )
+        intervals_memory_bytes = int(self.intervals.memory_usage(deep=True))
+        trading_minutes_memory_bytes = int(self.trading_minutes.memory_usage(deep=True))
+        return SchedulerInfo(
+            session_intervals_count=len(self.session_intervals),
+            session_intervals_memory_bytes=session_intervals_memory_bytes,
+            intervals_count=len(self.intervals),
+            intervals_memory_bytes=intervals_memory_bytes,
+            trading_minutes_count=len(self.trading_minutes),
+            trading_minutes_memory_bytes=trading_minutes_memory_bytes,
+            total_memory_bytes=(
+                intervals_memory_bytes
+                + trading_minutes_memory_bytes
+                + (
+                    0
+                    if self.session_intervals is self.intervals
+                    else session_intervals_memory_bytes
+                )
+            ),
+        )
 
     def __repr__(self):
         return f"StaticMinuteScheduler({self.calendar.name}, end={self.schedule.index[-1]})"
@@ -405,19 +425,21 @@ class StaticMinuteScheduler(SchedulerTemplate):
 
     def _get_session_loc(self, time: pd.Timestamp) -> int:
         """Return the position of the session containing one timestamp."""
-        try:
-            return self.session_intervals.get_loc(time)
-        except KeyError:
-            raise ValueError(f"Time {time} is not in trading interval") from None
+        time_ns = time.value
+        # `side="right"` finds the first open > time; -1 gives the last open <= time.
+        idx = int(self._session_opens_ns.searchsorted(time_ns, side="right")) - 1
+        if idx < 0 or time_ns >= self._session_closes_ns[idx]:
+            raise ValueError(f"Time {time} is not in trading interval")
+        return idx
 
     def to_session_end(self, time: pd.Timestamp) -> pd.Timestamp:
         """use calendar cuz we may meet early close time before holidays"""
         idx = self._get_session_loc(time)
-        return self.schedule["market_close"].iloc[idx]
+        return self._session_closes[idx]
 
     def to_session_start(self, time: pd.Timestamp) -> pd.Timestamp:
         idx = self._get_session_loc(time)
-        return self.schedule["market_open"].iloc[idx]
+        return self._session_opens[idx]
 
     def get_trading_date(self, time: pd.Timestamp) -> pd.Timestamp:
         """Return the trading date of the session containing ``time``."""

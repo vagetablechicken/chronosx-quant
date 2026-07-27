@@ -13,7 +13,7 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:0.7.2 /uv /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock README.md ./
-COPY chronosx_quant ./chronosx_quant
+COPY src ./src
 COPY docker ./docker
 
 RUN uv sync --frozen --no-dev --group docker

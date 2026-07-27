@@ -25,6 +25,18 @@ def _route_endpoint(path: str):
     raise AssertionError(f"Route {path} not found")
 
 
+def test_root_endpoint_describes_service():
+    root = _route_endpoint("/")
+
+    assert root() == {
+        "name": "chronosx-quant service",
+        "version": __version__,
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 def test_build_query_payload_for_trading_time():
     payload = build_query_payload(time_value="2026-03-10T11:29:00", calendar_name="SSE")
 

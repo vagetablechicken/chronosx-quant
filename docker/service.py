@@ -152,6 +152,16 @@ def create_app() -> FastAPI:
         version=__version__,
     )
 
+    @app.get("/")
+    def root() -> dict[str, str]:
+        return {
+            "name": "chronosx-quant service",
+            "version": __version__,
+            "status": "ok",
+            "docs": "/docs",
+            "health": "/health",
+        }
+
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}

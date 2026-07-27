@@ -98,8 +98,13 @@ def test_builtin_china_futures_calendar_shift(
     assert scheduler.shift(ts(night_last), 1, step="1min") == ts(next_session_first)
 
     with SchedulerManager.use_scheduler(scheduler):
-        assert ChronoTime(before_break).shift(1).isoformat() == ts(after_break).isoformat()
-        assert ChronoTime(night_last).shift(1).isoformat() == ts(next_session_first).isoformat()
+        assert (
+            ChronoTime(before_break).shift(1).isoformat() == ts(after_break).isoformat()
+        )
+        assert (
+            ChronoTime(night_last).shift(1).isoformat()
+            == ts(next_session_first).isoformat()
+        )
 
 
 @pytest.mark.parametrize(
@@ -211,8 +216,14 @@ def test_builtin_china_futures_calendar_trading_times(
     with SchedulerManager.use_scheduler(scheduler):
         chrono_day_times = ChronoTime(day_start).trading_times(day_end)
         assert len(chrono_day_times) == day_expected_len
-        assert chrono_day_times.iloc[0].isoformat() == ts("2026-03-10 10:14:00").isoformat()
-        assert chrono_day_times.iloc[-1].isoformat() == ts("2026-03-10 10:30:00").isoformat()
+        assert (
+            chrono_day_times.iloc[0].isoformat()
+            == ts("2026-03-10 10:14:00").isoformat()
+        )
+        assert (
+            chrono_day_times.iloc[-1].isoformat()
+            == ts("2026-03-10 10:30:00").isoformat()
+        )
 
 
 @pytest.mark.parametrize(
@@ -304,8 +315,14 @@ def test_builtin_china_futures_calendar_previous_and_next_trading_time(
     ) == ts(after_close_next_expected)
 
     with SchedulerManager.use_scheduler(scheduler):
-        assert ChronoTime(break_time).previous_trading_time().isoformat() == ts(prev_expected).isoformat()
-        assert ChronoTime(break_time).next_trading_time().isoformat() == ts(next_expected).isoformat()
+        assert (
+            ChronoTime(break_time).previous_trading_time().isoformat()
+            == ts(prev_expected).isoformat()
+        )
+        assert (
+            ChronoTime(break_time).next_trading_time().isoformat()
+            == ts(next_expected).isoformat()
+        )
         assert (
             ChronoTime(trading_time).previous_trading_time(inclusive=False).isoformat()
             == ts(exclusive_prev_expected).isoformat()

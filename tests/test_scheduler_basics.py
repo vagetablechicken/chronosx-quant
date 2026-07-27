@@ -17,6 +17,33 @@ def test_init():
     get_scheduler("CN_FUTURES_2300")
 
 
+def test_info_is_cached():
+    scheduler = get_scheduler("SSE")
+
+    assert scheduler.info is scheduler.info
+
+
+def test_session_lookup_uses_left_closed_boundaries():
+    scheduler = get_scheduler("SSE")
+    session_open = scheduler.schedule["market_open"].iloc[0]
+    session_close = scheduler.schedule["market_close"].iloc[0]
+
+    assert scheduler.to_session_start(session_open) == session_open
+    assert (
+        scheduler.to_session_end(session_close - pd.Timedelta("1ns")) == session_close
+    )
+    assert (
+        scheduler.get_trading_date(session_open.tz_convert("UTC"))
+        == (scheduler.schedule.index[0])
+    )
+
+    with pytest.raises(ValueError, match="is not in trading interval"):
+        scheduler.to_session_end(session_open - pd.Timedelta("1ns"))
+
+    with pytest.raises(ValueError, match="is not in trading interval"):
+        scheduler.to_session_end(session_close)
+
+
 class ThreeBreakCalendar(MarketCalendar):
     name = "THREE_BREAK"
     tz = "Asia/Shanghai"

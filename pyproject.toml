@@ -44,11 +44,8 @@ build-backend = "hatchling.build"
 chronosx-preview = "chronosx_quant.preview:main"
 
 [tool.pytest.ini_options]
-addopts = "-s -v"
+addopts = "-s -v --benchmark-disable-gc"
 pythonpath = ["src"]
 
 [tool.hatch.version]
 path = "src/chronosx_quant/__init__.py"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src"]

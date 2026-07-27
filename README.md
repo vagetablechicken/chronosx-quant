@@ -150,10 +150,10 @@ Run a single benchmark:
 uv run pytest tests/benchmark_chrono.py -k test_perf_is_trading --benchmark-only
 ```
 
-Save benchmark results:
+To run benchmark suites for stabilized performance metrics and export results:
 
 ```bash
-uv run pytest tests/benchmark_chrono.py --benchmark-only --benchmark-json=.benchmarks/chrono.json
+uv run pytest tests/benchmark_chrono.py --benchmark-only --benchmark-json=.benchmarks/chrono.json --benchmark-warmup=on --benchmark-calibration-precision=100
 ```
 
 Useful notes:
@@ -164,36 +164,56 @@ Useful notes:
 
 Benchmark preview:
 
-- test machine: Intel Core i9-14900HX with 5600 MT/s memory
-- most operations are in the `7-100 us` range
-- `trading_times` is around `40-45 us`
-- the slowest operations are `to_session_start` and `to_session_end`, typically around `0.2-0.26 ms`——TODO
-- no benchmark in the current preview has an average latency above `1 ms`
-- benchmark results may vary across machines and Python versions
+Measured on Windows 10 with an Intel Core i9-14900HX (32 logical CPUs) and
+CPython 3.10.19. Values below are approximate median latencies; maximum values
+are omitted because microbenchmarks are sensitive to OS scheduling outliers.
+
+| Operation | Approximate time |
+| --- | ---: |
+| `ChronoTime(...)` | 11.5 µs |
+| `shift` | 12.5–14.4 µs |
+| `is_trading` | 30.8–45.5 µs |
+| `is_trading_day` | 30.1–32.8 µs |
+| `trading_times` (one-hour range) | 44.7–49.4 µs |
+| `previous_trading_time` / `next_trading_time` | 7.8–8.3 µs |
+| `ChronoTime.now()` | 2.8–2.9 µs |
+| mocked `ChronoTime.now()` | 0.15 µs |
+| `get_trading_date` | 2.7–2.8 µs |
+| `to_session_start` / `to_session_end` | 3.2–3.3 µs |
+
+Session lookup remains effectively constant as the precomputed SSE schedule grows:
+
+| Schedule window | Sessions | Total scheduler memory | `get_trading_date` | `to_session_start` | `to_session_end` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 3 years | 727 | 1.36 MiB | 2.8 µs | 3.3 µs | 3.2 µs |
+| 6 years | 1,455 | 2.73 MiB | 2.7 µs | 3.3 µs | 3.2 µs |
+| 10 years | 2,430 | 4.56 MiB | 2.8 µs | 3.3 µs | 3.3 µs |
 
 ## Docker Service
 
 The container service is implemented with `FastAPI` and exposes a JSON query API plus a Prometheus-compatible metrics endpoint.
 
-Build and run with Docker:
-
-```bash
-docker build -t chronosx-quant .
-docker run --rm -p 8000:8000 -e CALENDAR_NAME=SSE chronosx-quant
-docker run --rm -p 8000:8000 -e CALENDAR_NAME=SSE -e SCHEDULE_START=2022-01-01 -e SCHEDULE_END=2030-12-31 chronosx-quant
-```
-
 Run locally without Docker:
 
 ```bash
-uv run --group docker python -m docker.service
+uv run --group docker -m docker.service
+```
+
+Build and run with Docker:
+
+```bash
+# build docker image
+docker build -t chronosx-quant .
+# run container
+docker run --rm -p 8000:8000 -e CALENDAR_NAME=SSE chronosx-quant
+docker run --rm -p 8000:8000 -e CALENDAR_NAME=SSE -e SCHEDULE_START=2022-01-01 -e SCHEDULE_END=2030-12-31 chronosx-quant
 ```
 
 Service schedule window:
 
 - `SCHEDULE_START` defaults to `2022-01-01`
 - `SCHEDULE_END` defaults to `now + 3 years`
-- if you set `SCHEDULE_END`, use any value `pandas.Timestamp(...)` can parse, for example `2030-12-31`
+- if you set `SCHEDULE_END`, use str in any format which `pandas.Timestamp(...)` can parse, for example `2030-12-31`
 
 Health check:
 

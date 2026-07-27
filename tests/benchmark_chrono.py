@@ -7,9 +7,9 @@ from chronosx_quant.time import ChronoTime
 
 CALENDARS = ["SSE", "CME Globex Crypto", "ICE", "CN_FUTURES_2300"]
 SCHEDULE_WINDOWS = [
-    pytest.param("2025-12-01", "2025-12-31", id="1_month"),
-    pytest.param("2025-01-01", "2025-12-31", id="1_year"),
-    pytest.param("2021-01-01", "2025-12-31", id="5_years"),
+    pytest.param("2023-01-01", "2025-12-31", id="3_years"),
+    pytest.param("2020-01-01", "2025-12-31", id="6_years"),
+    pytest.param("2016-01-01", "2025-12-31", id="10_years"),
 ]
 
 
@@ -18,7 +18,7 @@ def record_package_version(benchmark):
     benchmark.extra_info["chronosx_quant_version"] = __version__
 
 
-@pytest.fixture(params=CALENDARS)
+@pytest.fixture(params=CALENDARS, scope="session")
 def switch_scheduler(request):
     """
     Switch the active scheduler for each benchmark case.
@@ -68,16 +68,26 @@ def test_perf_next_trading_time(benchmark, t_start):
     benchmark(t_start.next_trading_time)
 
 
-def test_perf_to_session_start(benchmark, t_start):
-    benchmark(t_start.to_session_start)
-
-
-def test_perf_to_session_end(benchmark, t_start):
-    benchmark(t_start.to_session_end)
-
-
-def test_perf_get_trading_date(benchmark, t_start, switch_scheduler):
-    benchmark(switch_scheduler.get_trading_date, t_start)
+def record_scheduler_info(
+    benchmark,
+    scheduler,
+    schedule_start,
+    schedule_end,
+):
+    info = scheduler.info
+    benchmark.extra_info.update(
+        {
+            "schedule_start": schedule_start,
+            "schedule_end": schedule_end,
+            "session_intervals_count": info.session_intervals_count,
+            "session_intervals_memory_bytes": info.session_intervals_memory_bytes,
+            "intervals_count": info.intervals_count,
+            "intervals_memory_bytes": info.intervals_memory_bytes,
+            "trading_minutes_count": info.trading_minutes_count,
+            "trading_minutes_memory_bytes": info.trading_minutes_memory_bytes,
+            "total_memory_bytes": info.total_memory_bytes,
+        }
+    )
 
 
 @pytest.mark.parametrize(("schedule_start", "schedule_end"), SCHEDULE_WINDOWS)
@@ -91,24 +101,59 @@ def test_perf_get_trading_date_by_schedule_size(
     monkeypatch.setenv("SCHEDULE_END", schedule_end)
     scheduler = StaticMinuteScheduler("SSE")
     query_time = scheduler.session_intervals[-1].left
-    info = scheduler.info
-
-    benchmark.extra_info.update(
-        {
-            "schedule_start": schedule_start,
-            "schedule_end": schedule_end,
-            "intervals_count": info.intervals_count,
-            "intervals_memory_bytes": info.intervals_memory_bytes,
-            "trading_minutes_count": info.trading_minutes_count,
-            "trading_minutes_memory_bytes": info.trading_minutes_memory_bytes,
-            "total_memory_bytes": info.total_memory_bytes,
-        }
-    )
+    record_scheduler_info(benchmark, scheduler, schedule_start, schedule_end)
 
     result = benchmark(scheduler.get_trading_date, query_time)
     assert result == scheduler.schedule.index[-1]
 
 
-def test_travel(benchmark, t_start):
+@pytest.mark.parametrize(("schedule_start", "schedule_end"), SCHEDULE_WINDOWS)
+def test_perf_to_session_start_by_schedule_size(
+    benchmark,
+    monkeypatch,
+    schedule_start,
+    schedule_end,
+):
+    monkeypatch.setenv("SCHEDULE_START", schedule_start)
+    monkeypatch.setenv("SCHEDULE_END", schedule_end)
+    scheduler = StaticMinuteScheduler("SSE")
+    query_time = scheduler.session_intervals[-1].left
+    record_scheduler_info(benchmark, scheduler, schedule_start, schedule_end)
+
+    result = benchmark(scheduler.to_session_start, query_time)
+    assert result == scheduler.schedule["market_open"].iloc[-1]
+
+
+@pytest.mark.parametrize(("schedule_start", "schedule_end"), SCHEDULE_WINDOWS)
+def test_perf_to_session_end_by_schedule_size(
+    benchmark,
+    monkeypatch,
+    schedule_start,
+    schedule_end,
+):
+    monkeypatch.setenv("SCHEDULE_START", schedule_start)
+    monkeypatch.setenv("SCHEDULE_END", schedule_end)
+    scheduler = StaticMinuteScheduler("SSE")
+    query_time = scheduler.session_intervals[-1].left
+    record_scheduler_info(benchmark, scheduler, schedule_start, schedule_end)
+
+    result = benchmark(scheduler.to_session_end, query_time)
+    assert result == scheduler.schedule["market_close"].iloc[-1]
+
+
+def test_perf_now(benchmark, switch_scheduler):
+    """Benchmark real time with each scheduler provided by ``switch_scheduler``."""
+    result = benchmark(ChronoTime.now)
+    assert isinstance(result, ChronoTime)
+
+
+def test_perf_now_with_travel(benchmark, t_start):
+    """Benchmark mocked time with the same scheduler parameterization.
+
+    The ``t_start`` fixture depends on ``switch_scheduler``, so this test runs
+    once for every calendar in ``CALENDARS`` just like ``test_perf_now``.
+    """
     with travel(t_start):
-        benchmark(ChronoTime.now().shift, -100)
+        result = benchmark(ChronoTime.now)
+
+    assert result == t_start
