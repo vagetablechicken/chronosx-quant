@@ -49,3 +49,11 @@ pythonpath = ["src"]
 
 [tool.hatch.version]
 path = "src/chronosx_quant/__init__.py"
+
+[tool.coverage.run]
+branch = true
+source = ["chronosx_quant"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true

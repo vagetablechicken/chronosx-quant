@@ -162,3 +162,17 @@ class ChronoTime(pd.Timestamp):
         ``self`` is outside any session, this method raises an exception.
         """
         return ChronoTime(SchedulerManager.get_scheduler().to_session_end(self))
+
+    def get_trading_date(self) -> ChronoTime:
+        """
+        Return the trading date as a ``ChronoTime`` at midnight.
+
+        Returning ``ChronoTime`` makes it convenient to keep using
+        scheduler-aware timestamp methods. Call ``.date()`` on the result when
+        a date object is needed.
+
+        For overnight sessions, the returned trading date can differ from this
+        timestamp's calendar date. If this timestamp is outside any session,
+        this method raises an exception.
+        """
+        return ChronoTime(SchedulerManager.get_scheduler().get_trading_date(self))

@@ -53,5 +53,5 @@ def main():
     calendar_preview("CME Globex Crypto")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

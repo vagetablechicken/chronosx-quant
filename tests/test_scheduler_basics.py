@@ -122,7 +122,9 @@ def test_shift_raises_when_result_is_out_of_range(calendar_name):
 def test_simple_friday_evening(calendar_name):
     scheduler = get_scheduler(calendar_name)
     with SchedulerManager.use_scheduler(scheduler):
-        scheduler.shift(ChronoTime("2023-05-26 21:00:00+08:00"), 100, step="1min")
-        assert scheduler.to_session_end(
-            ChronoTime("2023-05-26 21:00:00+08:00")
-        ) == ChronoTime("2023-05-29 15:00:00")
+        friday_night = ChronoTime("2023-05-26 21:00:00+08:00")
+        scheduler.shift(friday_night, 100, step="1min")
+        assert scheduler.to_session_end(friday_night) == ChronoTime(
+            "2023-05-29 15:00:00"
+        )
+        assert friday_night.get_trading_date() == ChronoTime("2023-05-29")

@@ -133,6 +133,7 @@ class SchedulerTemplate:
         """Check if the time is a trading day, no matter if it's a trading time."""
         ...
 
+    def get_trading_date(self, time: pd.Timestamp) -> pd.Timestamp: ...
     def to_session_start(self, time: pd.Timestamp) -> pd.Timestamp: ...
     def to_session_end(self, time: pd.Timestamp) -> pd.Timestamp: ...
 
@@ -167,8 +168,8 @@ class StaticMinuteScheduler(SchedulerTemplate):
         # nanosecond views for a much cheaper binary search on this hot path.
         self._session_opens = self.schedule["market_open"].array
         self._session_closes = self.schedule["market_close"].array
-        self._session_opens_ns = self._session_opens.asi8
-        self._session_closes_ns = self._session_closes.asi8
+        self._session_opens_ns = self._session_opens.as_unit("ns").asi8
+        self._session_closes_ns = self._session_closes.as_unit("ns").asi8
 
         self.intervals = self._build_trading_intervals()
         self.trading_minutes = self._build_trading_minutes()

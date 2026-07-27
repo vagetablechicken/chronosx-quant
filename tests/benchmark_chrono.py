@@ -1,4 +1,5 @@
 import pytest
+import pandas as pd
 from chronosx_quant import __version__
 from chronosx_quant.mock import travel
 from chronosx_quant.scheduler import StaticMinuteScheduler, SchedulerManager
@@ -6,6 +7,11 @@ from chronosx_quant.time import ChronoTime
 
 
 CALENDARS = ["SSE", "CME Globex Crypto", "ICE", "CN_FUTURES_2300"]
+TIME_POSITIONS = [
+    pytest.param(0.1, id="early"),
+    pytest.param(0.5, id="middle"),
+    pytest.param(0.9, id="late"),
+]
 SCHEDULE_WINDOWS = [
     pytest.param("2023-01-01", "2025-12-31", id="3_years"),
     pytest.param("2020-01-01", "2025-12-31", id="6_years"),
@@ -33,9 +39,14 @@ def switch_scheduler(request):
         yield scheduler
 
 
-@pytest.fixture
-def t_start(switch_scheduler):
-    return ChronoTime("2026-03-10T09:30:00")
+def position_index(length, position):
+    return round((length - 1) * position)
+
+
+@pytest.fixture(params=TIME_POSITIONS)
+def t_start(request, switch_scheduler):
+    index = position_index(len(switch_scheduler.trading_minutes), request.param)
+    return ChronoTime(switch_scheduler.trading_minutes[index])
 
 
 def test_perf_init(benchmark):
@@ -43,7 +54,6 @@ def test_perf_init(benchmark):
 
 
 def test_perf_jump(benchmark, t_start):
-    # This triggers full schedule expansion in current implementation
     benchmark(t_start.shift, 100)
 
 
@@ -56,7 +66,7 @@ def test_perf_is_trading_day(benchmark, t_start):
 
 
 def test_perf_trading_times(benchmark, t_start):
-    t_end = "2026-03-10T10:30:00"
+    t_end = t_start + pd.Timedelta(hours=1)
     benchmark(t_start.trading_times, t_end)
 
 
@@ -73,12 +83,14 @@ def record_scheduler_info(
     scheduler,
     schedule_start,
     schedule_end,
+    query_position,
 ):
     info = scheduler.info
     benchmark.extra_info.update(
         {
             "schedule_start": schedule_start,
             "schedule_end": schedule_end,
+            "query_position": query_position,
             "session_intervals_count": info.session_intervals_count,
             "session_intervals_memory_bytes": info.session_intervals_memory_bytes,
             "intervals_count": info.intervals_count,
@@ -91,54 +103,69 @@ def record_scheduler_info(
 
 
 @pytest.mark.parametrize(("schedule_start", "schedule_end"), SCHEDULE_WINDOWS)
+@pytest.mark.parametrize("query_position", TIME_POSITIONS)
 def test_perf_get_trading_date_by_schedule_size(
     benchmark,
     monkeypatch,
     schedule_start,
     schedule_end,
+    query_position,
 ):
     monkeypatch.setenv("SCHEDULE_START", schedule_start)
     monkeypatch.setenv("SCHEDULE_END", schedule_end)
     scheduler = StaticMinuteScheduler("SSE")
-    query_time = scheduler.session_intervals[-1].left
-    record_scheduler_info(benchmark, scheduler, schedule_start, schedule_end)
+    query_index = position_index(len(scheduler.session_intervals), query_position)
+    query_time = scheduler.session_intervals[query_index].left
+    record_scheduler_info(
+        benchmark, scheduler, schedule_start, schedule_end, query_position
+    )
 
     result = benchmark(scheduler.get_trading_date, query_time)
-    assert result == scheduler.schedule.index[-1]
+    assert result == scheduler.schedule.index[query_index]
 
 
 @pytest.mark.parametrize(("schedule_start", "schedule_end"), SCHEDULE_WINDOWS)
+@pytest.mark.parametrize("query_position", TIME_POSITIONS)
 def test_perf_to_session_start_by_schedule_size(
     benchmark,
     monkeypatch,
     schedule_start,
     schedule_end,
+    query_position,
 ):
     monkeypatch.setenv("SCHEDULE_START", schedule_start)
     monkeypatch.setenv("SCHEDULE_END", schedule_end)
     scheduler = StaticMinuteScheduler("SSE")
-    query_time = scheduler.session_intervals[-1].left
-    record_scheduler_info(benchmark, scheduler, schedule_start, schedule_end)
+    query_index = position_index(len(scheduler.session_intervals), query_position)
+    query_time = scheduler.session_intervals[query_index].left
+    record_scheduler_info(
+        benchmark, scheduler, schedule_start, schedule_end, query_position
+    )
 
     result = benchmark(scheduler.to_session_start, query_time)
-    assert result == scheduler.schedule["market_open"].iloc[-1]
+    assert result == scheduler.schedule["market_open"].iloc[query_index]
 
 
 @pytest.mark.parametrize(("schedule_start", "schedule_end"), SCHEDULE_WINDOWS)
+@pytest.mark.parametrize("query_position", TIME_POSITIONS)
 def test_perf_to_session_end_by_schedule_size(
     benchmark,
     monkeypatch,
     schedule_start,
     schedule_end,
+    query_position,
 ):
     monkeypatch.setenv("SCHEDULE_START", schedule_start)
     monkeypatch.setenv("SCHEDULE_END", schedule_end)
     scheduler = StaticMinuteScheduler("SSE")
-    query_time = scheduler.session_intervals[-1].left
-    record_scheduler_info(benchmark, scheduler, schedule_start, schedule_end)
+    query_index = position_index(len(scheduler.session_intervals), query_position)
+    query_time = scheduler.session_intervals[query_index].left
+    record_scheduler_info(
+        benchmark, scheduler, schedule_start, schedule_end, query_position
+    )
 
     result = benchmark(scheduler.to_session_end, query_time)
-    assert result == scheduler.schedule["market_close"].iloc[-1]
+    assert result == scheduler.schedule["market_close"].iloc[query_index]
 
 
 def test_perf_now(benchmark, switch_scheduler):

@@ -131,7 +131,7 @@ class PerformanceRegistry:
         if name in cls._metrics:
             di = cls._metrics[name]
             return (
-                f"{name}: sum={di.get_mean_value() * di.get_total_count()}, "
+                f"{name}(us): sum={di.get_mean_value() * di.get_total_count()}, "
                 f"count={di.get_total_count()}, mean={di.get_mean_value()}, "
                 f"p50={di.get_value_at_percentile(50)}, "
                 f"p90={di.get_value_at_percentile(90)}, "

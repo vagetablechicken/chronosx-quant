@@ -158,7 +158,9 @@ uv run pytest tests/benchmark_chrono.py --benchmark-only --benchmark-json=.bench
 
 Useful notes:
 
-- `tests/benchmark_chrono.py` runs each benchmark across `SSE`, `CME Globex Crypto`, and `ICE`
+- `tests/benchmark_chrono.py` runs benchmarks across `SSE`, `CME Globex Crypto`,
+  `ICE`, and `CN_FUTURES_2300`, sampling trading times near the early, middle,
+  and late portions of each loaded schedule
 - `--benchmark-only` runs only benchmark tests and skips normal tests
 - if you want the usual pytest output without benchmark filtering, you can run `uv run pytest tests/benchmark_chrono.py`
 
