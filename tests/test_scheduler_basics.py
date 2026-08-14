@@ -17,6 +17,26 @@ def test_init():
     get_scheduler("CN_FUTURES_2300")
 
 
+def test_init_accepts_explicit_schedule_window():
+    scheduler = StaticMinuteScheduler(
+        "SSE",
+        start="2026-03-01",
+        end="2026-03-31",
+    )
+
+    assert scheduler.schedule.index[0] == pd.Timestamp("2026-03-02")
+    assert scheduler.schedule.index[-1] == pd.Timestamp("2026-03-31")
+
+
+def test_init_rejects_reversed_schedule_window():
+    with pytest.raises(ValueError, match="Schedule start must not be after end"):
+        StaticMinuteScheduler(
+            "SSE",
+            start="2026-04-01",
+            end="2026-03-01",
+        )
+
+
 def test_info_is_cached():
     scheduler = get_scheduler("SSE")
 

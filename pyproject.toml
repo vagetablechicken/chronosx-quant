@@ -42,6 +42,7 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 chronosx-preview = "chronosx_quant.preview:main"
+cxq = "chronosx_quant.preview:main"
 
 [tool.pytest.ini_options]
 addopts = "-s -v --benchmark-disable-gc"

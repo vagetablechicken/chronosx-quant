@@ -13,9 +13,31 @@ pip install dist/chronosx_quant-*-py3-none-any.whl
 # install from pypi
 pip install chronosx-quant
 
-# check holidays in the next month
-uv run chronosx-preview
+# `cxq` stands for ChronosX Quant. It is the short command for
+# `chronosx-preview`; both commands provide the same functionality.
+# shortest forms: q=check, h=holidays, ls=calendars
+# calendar aliases: sse, cme, f23, f01, f02
+cxq ls
+cxq q "2026-08-10 21:00" -c f23
+cxq h -c sse -s 2026-08-10 -d 10
+
+# full command:
+# list holidays (the default command, SSE by default)
 chronosx-preview
+chronosx-preview --start 2026-08-10 --days 60
+
+# show the stable numeric calendar IDs
+chronosx-preview calendars
+
+# list holidays for another calendar (3 = CN_FUTURES_2300)
+chronosx-preview holidays -c 3 --start 2026-08-10
+
+# inspect one timestamp
+chronosx-preview check "2026-08-10 21:00" -c 3
+
+# optionally control the scheduler's preloaded window
+chronosx-preview check "2026-08-10 21:00" -c 3 \
+  --scheduler-start 2026-01-01 --scheduler-end 2027-01-01
 ```
 
 Install the extra dependencies for the HTTP service:
@@ -166,30 +188,39 @@ Useful notes:
 
 Benchmark preview:
 
-Measured on Windows 10 with an Intel Core i9-14900HX (32 logical CPUs) and
-CPython 3.10.19. Values below are approximate median latencies; maximum values
-are omitted because microbenchmarks are sensitive to OS scheduling outliers.
+Source: `.benchmarks/chrono.json`, generated on 2026-08-14 with
+chronosx-quant `0.3.0b3`, Windows 10, an Intel Core i9-14900HX (32 logical
+CPUs), and CPython 3.10.19.
 
-| Operation | Approximate time |
-| --- | ---: |
-| `ChronoTime(...)` | 11.5 µs |
-| `shift` | 12.5–14.4 µs |
-| `is_trading` | 30.8–45.5 µs |
-| `is_trading_day` | 30.1–32.8 µs |
-| `trading_times` (one-hour range) | 44.7–49.4 µs |
-| `previous_trading_time` / `next_trading_time` | 7.8–8.3 µs |
-| `ChronoTime.now()` | 2.8–2.9 µs |
-| mocked `ChronoTime.now()` | 0.15 µs |
-| `get_trading_date` | 2.7–2.8 µs |
-| `to_session_start` / `to_session_end` | 3.2–3.3 µs |
+Each parameterized benchmark case has its own median. The representative value
+below is the median of those case medians; the range shows the lowest and
+highest case median in the file. This is more robust than reporting raw maximum
+samples, but the wide ranges still show that Windows scheduling affected some
+cases during this run.
 
-Session lookup remains effectively constant as the precomputed SSE schedule grows:
+| Operation | Representative median | Case median range |
+| --- | ---: | ---: |
+| `ChronoTime(...)` | 8.75 µs | 8.75 µs |
+| `shift` | 14.00 µs | 12.90–144.10 µs |
+| `is_trading` | 1.06 µs | 0.87–9.26 µs |
+| `is_trading_day` | 35.85 µs | 28.00–410.70 µs |
+| `trading_times` (one-hour range) | 31.85 µs | 28.90–280.50 µs |
+| `previous_trading_time` | 8.32 µs | 6.75–76.45 µs |
+| `next_trading_time` | 9.55 µs | 6.90–85.35 µs |
+| `ChronoTime.now()` | 28.62 µs | 2.74–28.90 µs |
+| mocked `ChronoTime.now()` | 0.48 µs | 0.14–0.97 µs |
+
+The schedule-size cases below use the median of the early, middle, and late
+query-position medians for each window. `to_session_end` remained stable in this
+run; the wider `get_trading_date` and `to_session_start` results reflect the
+same host-level timing noise visible above and should not be interpreted as an
+algorithmic schedule-size trend.
 
 | Schedule window | Sessions | Total scheduler memory | `get_trading_date` | `to_session_start` | `to_session_end` |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 3 years | 727 | 1.36 MiB | 2.8 µs | 3.3 µs | 3.2 µs |
-| 6 years | 1,455 | 2.73 MiB | 2.7 µs | 3.3 µs | 3.2 µs |
-| 10 years | 2,430 | 4.56 MiB | 2.8 µs | 3.3 µs | 3.3 µs |
+| 3 years | 727 | 1.36 MiB | 33.48 µs | 3.23 µs | 3.12 µs |
+| 6 years | 1,455 | 2.73 MiB | 34.25 µs | 3.15 µs | 3.12 µs |
+| 10 years | 2,430 | 4.56 MiB | 2.95 µs | 3.15 µs | 3.12 µs |
 
 ## Docker Service
 
@@ -254,6 +285,7 @@ Calendar preview:
 ```bash
 curl "http://localhost:8000/calendar_preview"
 curl "http://localhost:8000/calendar_preview?calendar_name=SSE&days_ahead=32"
+curl "http://localhost:8000/calendar_preview?calendar_name=SSE&check_time=2026-08-10%2009:30"
 ```
 
 The preview response helps verify upcoming holidays and recent holiday definitions for a calendar. It includes:
@@ -261,10 +293,15 @@ The preview response helps verify upcoming holidays and recent holiday definitio
 - `calendar_name`
 - `calendar_full_name`
 - `today`
+- `range_start`
 - `days_ahead`
 - `range_end`
 - `latest_holidays`
 - `upcoming_holidays`
+
+When `check_time` is supplied, `check` also includes the calendar-local time,
+date, weekday, whether the date is a trading day, whether the instant is a
+trading time, and the session's `trading_date` (or `null` outside a session).
 
 Prometheus metrics:
 
@@ -295,34 +332,42 @@ You can scrape `/metrics` from Prometheus and alert with:
 
 ## Performance Design
 
-Chronosx uses `HdrHistogram` as the profiling backend for `performance`
-instead of `TDigest`.
+Chronosx uses `HdrHistogram` as the profiling backend for `performance`. The
+main reason is predictability: profiling should add consistently low recording
+overhead, with memory usage that can be determined from the configured range and
+precision.
 
-This choice is intentional: our profiling data is execution latency, measured in
-microseconds, always positive, and expected to stay within a configurable but
-bounded range. That shape matches `HdrHistogram` very well.
+Execution latency is a good match for this model. It is a positive duration,
+recorded as integer microseconds, and expected to remain within a configurable
+range. `HdrHistogram` can therefore map each observation directly to a latency
+bucket instead of dynamically maintaining a set of floating-point centroids.
 
-Why `HdrHistogram` fits this project:
+This gives the profiler:
 
-- latency is recorded in integer `us`, so the histogram keeps a natural
-  time-unit representation instead of approximating around floating-point
-  centroids
-- high-percentile queries such as `p99`, `p999`, and `p9999` are a first-class
-  use case for runtime profiling, and `HdrHistogram` is built for this style of
-  tail-latency analysis
-- writes and percentile reads are both very fast, which is important when the
-  profiler itself should add as little overhead as possible
-- the storage model is predictable once the trackable range and significant
-  figures are chosen
+- predictable memory usage after the maximum latency and significant figures
+  are configured
+- consistently low-cost recording, which reduces the profiler's effect on the
+  function being measured
+- direct support for tail-latency percentiles such as `p99`, `p999`, and
+  `p9999`
+- a natural integer-microsecond representation
 
-Why not `TDigest` by default:
+`TDigest` is not unsuitable; it solves a more general problem. It approximates
+the observed distribution with data-dependent centroids, which is especially
+useful when the value range is unknown or highly dynamic, or when summaries need
+to be merged across distributed nodes. Chronosx instead prefers fixed,
+configurable precision: `HdrHistogram` quantizes values into deterministic
+latency buckets whose relative error is controlled by `significant_figures`.
+This makes the accuracy, memory usage, and recording overhead easier to reason
+about than an adaptive centroid summary.
 
-- `TDigest` is more general-purpose and is excellent when the value range is
-  unknown, highly dynamic, or needs to be merged across distributed nodes
-- that flexibility is less important for this library, because function latency
-  is already naturally modeled as bounded positive durations
-- for our use case, the extra abstraction of centroid-based summaries is not as
-  compelling as keeping direct microsecond-scale latency buckets
+`HdrHistogram` is still an approximate summary; it does not retain every raw
+latency measurement. Applications that require mathematically exact percentiles
+must store the raw samples, or maintain exact counts at every required latency
+resolution, at a substantially higher and potentially unbounded memory cost.
+The default here favors predictable, explicitly bounded error and low overhead,
+not a claim of zero-error percentile calculation or universal performance
+superiority.
 
 Configuration model:
 
@@ -330,9 +375,60 @@ Configuration model:
   `60 s` maximum, `3` significant figures
 - you can override the global default through
   `PerformanceRegistry.configure_default(...)`
-- you can override a specific metric through `@performance(...)` or
-  `with performance(...)`, including `min_value_us`, `max_value_us`, and
-  `significant_figures`
+- you can configure a named metric through `PerformanceRegistry.configure(...)`
+  or pass the same options directly to `@performance(...)` and
+  `with performance(...)`
+
+All ranges use integer microseconds. `significant_figures` accepts values from
+`1` to `5`; the default `3` is a practical balance between relative precision
+and memory usage.
+
+```python
+from chronosx_quant.performance import PerformanceRegistry, performance
+
+# Change the defaults used by metrics created after this call.
+PerformanceRegistry.configure_default(
+    min_value_us=1,
+    max_value_us=10_000_000,  # 10 seconds
+    significant_figures=3,
+)
+
+# Configure one named metric before it records its first value.
+PerformanceRegistry.configure(
+    "database.query",
+    min_value_us=10,
+    max_value_us=2_000_000,  # 2 seconds
+    significant_figures=4,
+)
+
+@performance("database.query")
+def query_database():
+    ...
+
+# Alternatively, keep a metric's configuration next to its decorator.
+@performance(
+    "strategy.calculate",
+    min_value_us=1,
+    max_value_us=500_000,
+    significant_figures=3,
+)
+def calculate_strategy():
+    ...
+
+# The same options are available for one measured block.
+with performance(
+    "market_data.update",
+    min_value_us=1,
+    max_value_us=100_000,
+    significant_figures=3,
+):
+    update_market_data()
+```
+
+Configure each metric before its first measurement. Once its histogram backend
+has been created, changing the registry configuration does not rebuild that
+backend. `PerformanceRegistry.clear()` removes all collected measurements and
+restores the library defaults when a complete reconfiguration is required.
 
 Why `performance` does not use `ContextDecorator`:
 

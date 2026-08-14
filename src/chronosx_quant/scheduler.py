@@ -151,11 +151,33 @@ class StaticMinuteScheduler(SchedulerTemplate):
     For performance, only support 1 minute step, prepare all timeline when init, no more updates
     """
 
-    def __init__(self, calendar_name: str):
+    def __init__(
+        self,
+        calendar_name: str,
+        *,
+        start: str | pd.Timestamp | None = None,
+        end: str | pd.Timestamp | None = None,
+    ):
         self.calendar = mcal.get_calendar(calendar_name)
+
+        def schedule_bound(
+            value: str | pd.Timestamp | None, default: pd.Timestamp
+        ) -> pd.Timestamp:
+            bound = default if value is None else pd.Timestamp(value)
+            if bound.tzinfo is not None:
+                bound = bound.tz_convert(self.calendar.tz).tz_localize(None)
+            return bound
+
+        schedule_start = schedule_bound(start, get_schedule_start())
+        schedule_end = schedule_bound(end, get_schedule_end())
+        if schedule_start > schedule_end:
+            raise ValueError(
+                f"Schedule start must not be after end: "
+                f"start={schedule_start}, end={schedule_end}"
+            )
         self.schedule = self.calendar.schedule(
-            get_schedule_start(),
-            get_schedule_end(),
+            schedule_start,
+            schedule_end,
             tz=self.calendar.tz,
         )
         self.session_intervals = pd.IntervalIndex.from_arrays(
@@ -172,6 +194,11 @@ class StaticMinuteScheduler(SchedulerTemplate):
         self._session_closes_ns = self._session_closes.as_unit("ns").asi8
 
         self.intervals = self._build_trading_intervals()
+        # Trading intervals are sorted and non-overlapping. Keep zero-copy
+        # nanosecond views so is_trading() can use a direct binary search
+        # instead of pandas' generic IntervalIndex lookup machinery.
+        self._interval_starts_ns = self.intervals.left.as_unit("ns").asi8
+        self._interval_ends_ns = self.intervals.right.as_unit("ns").asi8
         self.trading_minutes = self._build_trading_minutes()
 
     @property
@@ -400,12 +427,11 @@ class StaticMinuteScheduler(SchedulerTemplate):
 
     def is_trading(self, time: pd.Timestamp) -> bool:
         """Check if the time is a trading time."""
-        # be careful to exclude break times
-        try:
-            self.intervals.get_loc(time)
-        except KeyError:
-            return False
-        return True
+        time_ns = time.value
+        # Find the last interval whose left edge is <= time. Intervals are
+        # left-closed/right-open, so the right edge itself is not tradable.
+        idx = int(self._interval_starts_ns.searchsorted(time_ns, side="right")) - 1
+        return idx >= 0 and time_ns < self._interval_ends_ns[idx]
 
     def is_trading_day(self, time: pd.Timestamp) -> bool:
         """Check if the date is in trading, no matter if it's a trading time."""

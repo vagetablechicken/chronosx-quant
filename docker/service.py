@@ -183,11 +183,13 @@ def create_app() -> FastAPI:
     def calendar_preview(
         calendar_name: str | None = Query(default=None),
         days_ahead: int = Query(default=32, ge=1, le=366),
+        check_time: str | None = Query(default=None),
     ) -> dict[str, object]:
         try:
             return build_calendar_preview(
                 calendar_name or DEFAULT_CALENDAR_NAME,
                 days_ahead=days_ahead,
+                check_time=check_time,
             )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc

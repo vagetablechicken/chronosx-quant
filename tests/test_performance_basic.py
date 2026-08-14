@@ -57,7 +57,7 @@ def test_with_performance_accumulates_total_time_in_registry():
     assert PerformanceRegistry.get_percentile("scoped", 0.5) >= 5000
     report = PerformanceRegistry.get_report("scoped")
     assert "count=3" in report
-    assert "max=12007" in report
+    assert "max=12,007" in report
 
 
 def test_report_format_does_not_include_indentation_spaces():

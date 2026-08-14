@@ -131,14 +131,14 @@ class PerformanceRegistry:
         if name in cls._metrics:
             di = cls._metrics[name]
             return (
-                f"{name}(us): sum={di.get_mean_value() * di.get_total_count()}, "
-                f"count={di.get_total_count()}, mean={di.get_mean_value()}, "
-                f"p50={di.get_value_at_percentile(50)}, "
-                f"p90={di.get_value_at_percentile(90)}, "
-                f"p99={di.get_value_at_percentile(99)}, "
-                f"p999={di.get_value_at_percentile(99.9)}, "
-                f"p9999={di.get_value_at_percentile(99.99)}, "
-                f"max={di.get_max_value()}"
+                f"{name}(us): sum={di.get_mean_value() * di.get_total_count():,}, "
+                f"count={di.get_total_count():,}, mean={di.get_mean_value():,}, "
+                f"p50={di.get_value_at_percentile(50):,}, "
+                f"p90={di.get_value_at_percentile(90):,}, "
+                f"p99={di.get_value_at_percentile(99):,}, "
+                f"p999={di.get_value_at_percentile(99.9):,}, "
+                f"p9999={di.get_value_at_percentile(99.99):,}, "
+                f"max={di.get_max_value():,}"
             )
         return f"{name}: not found"
 

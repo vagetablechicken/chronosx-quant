@@ -99,7 +99,9 @@ def test_metrics_endpoint_returns_prometheus_text():
 
 def test_calendar_preview_endpoint_returns_upcoming_holidays():
     calendar_preview = _route_endpoint("/calendar_preview")
-    payload = calendar_preview(calendar_name="SSE", days_ahead=32)
+    payload = calendar_preview(
+        calendar_name="SSE", days_ahead=32, check_time=None
+    )
 
     assert payload["calendar_name"] == "SSE"
     assert payload["days_ahead"] == 32
@@ -108,6 +110,21 @@ def test_calendar_preview_endpoint_returns_upcoming_holidays():
     assert "upcoming_holidays" in payload
     assert isinstance(payload["latest_holidays"], list)
     assert isinstance(payload["upcoming_holidays"], list)
+
+
+def test_calendar_preview_endpoint_checks_trading_time():
+    calendar_preview = _route_endpoint("/calendar_preview")
+    payload = calendar_preview(
+        calendar_name="SSE",
+        days_ahead=32,
+        check_time="2026-03-10 09:30",
+    )
+
+    assert payload["check"]["time"] == "2026-03-10T09:30:00+08:00"
+    assert payload["check"]["weekday"] == "Tuesday"
+    assert payload["check"]["is_trading_day"] is True
+    assert payload["check"]["is_trading_time"] is True
+    assert payload["check"]["trading_date"] == "2026-03-10"
 
 
 def test_query_endpoint_rejects_invalid_time():
