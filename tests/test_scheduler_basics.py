@@ -43,6 +43,23 @@ def test_info_is_cached():
     assert scheduler.info is scheduler.info
 
 
+def test_use_scheduler_yields_and_restores_scheduler():
+    original = SchedulerManager.get_scheduler()
+    temporary = StaticMinuteScheduler(
+        "CME Globex Crypto",
+        start="2026-03-01",
+        end="2026-03-31",
+    )
+
+    with SchedulerManager.use_scheduler(temporary) as scheduler:
+        assert SchedulerManager.get_scheduler() is scheduler
+        assert scheduler is temporary
+        assert scheduler.calendar.name == "CME Globex Crypto"
+        assert ChronoTime("2026-03-09 17:00:00").tz == scheduler.tz
+
+    assert SchedulerManager.get_scheduler() is original
+
+
 def test_session_lookup_uses_left_closed_boundaries():
     scheduler = get_scheduler("SSE")
     session_open = scheduler.schedule["market_open"].iloc[0]

@@ -88,14 +88,11 @@ def _holiday_payload(
     calendar = scheduler.calendar
     today = pd.Timestamp.now(tz=calendar.tz).date()
     start_date = (
-        today
-        if start is None
-        else _to_calendar_timezone(start, calendar.tz).date()
+        today if start is None else _to_calendar_timezone(start, calendar.tz).date()
     )
     end_date = start_date + pd.Timedelta(days=days_ahead)
     holiday_dates = [
-        pd.Timestamp(value).date()
-        for value in calendar.holidays().kwds["holidays"]
+        pd.Timestamp(value).date() for value in calendar.holidays().kwds["holidays"]
     ]
     holidays_in_range = [
         holiday.isoformat()
@@ -280,9 +277,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_scheduler_arguments(holidays)
 
-    check = commands.add_parser(
-        "check", aliases=["q"], help="inspect one timestamp"
-    )
+    check = commands.add_parser("check", aliases=["q"], help="inspect one timestamp")
     check.add_argument("time", metavar="TIME", help="timestamp to inspect")
     _add_calendar_argument(check)
     _add_scheduler_arguments(check)

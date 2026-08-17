@@ -48,9 +48,7 @@ def test_build_holiday_preview_filters_range_and_passes_scheduler_window():
             scheduler_end="2027-01-01",
         )
 
-    scheduler_type.assert_called_once_with(
-        "TEST", start="2026-01-01", end="2027-01-01"
-    )
+    scheduler_type.assert_called_once_with("TEST", start="2026-01-01", end="2027-01-01")
     assert result["range_start"] == "2026-08-10"
     assert result["range_end"] == "2026-08-17"
     assert result["upcoming_holidays"] == ["2026-08-12"]
@@ -60,18 +58,14 @@ def test_build_time_preview_reports_weekday_and_trading_information():
     scheduler = fake_scheduler()
 
     with (
-        patch.object(
-            preview_module, "StaticMinuteScheduler", return_value=scheduler
-        ),
+        patch.object(preview_module, "StaticMinuteScheduler", return_value=scheduler),
         patch.object(
             preview_module.SchedulerManager,
             "use_scheduler",
             return_value=nullcontext(),
         ),
     ):
-        result = preview_module.build_time_preview(
-            "TEST", "2026-08-10 13:00:00+00:00"
-        )
+        result = preview_module.build_time_preview("TEST", "2026-08-10 13:00:00+00:00")
 
     query_time = pd.Timestamp("2026-08-10 21:00:00+08:00")
     scheduler.is_trading_day.assert_called_once_with(query_time)
@@ -97,9 +91,7 @@ def test_build_time_preview_distinguishes_break_from_non_trading_day():
     )
 
     with (
-        patch.object(
-            preview_module, "StaticMinuteScheduler", return_value=scheduler
-        ),
+        patch.object(preview_module, "StaticMinuteScheduler", return_value=scheduler),
         patch.object(
             preview_module.SchedulerManager,
             "use_scheduler",
@@ -121,9 +113,7 @@ def test_build_time_preview_has_no_trading_date_outside_session():
     )
 
     with (
-        patch.object(
-            preview_module, "StaticMinuteScheduler", return_value=scheduler
-        ),
+        patch.object(preview_module, "StaticMinuteScheduler", return_value=scheduler),
         patch.object(
             preview_module.SchedulerManager,
             "use_scheduler",
@@ -142,9 +132,7 @@ def test_combined_preview_remains_compatible_for_service():
     scheduler = fake_scheduler()
 
     with (
-        patch.object(
-            preview_module, "StaticMinuteScheduler", return_value=scheduler
-        ),
+        patch.object(preview_module, "StaticMinuteScheduler", return_value=scheduler),
         patch.object(
             preview_module.SchedulerManager,
             "use_scheduler",
@@ -229,9 +217,7 @@ def test_main_accepts_holiday_options_without_command():
     with patch.object(
         preview_module, "build_holiday_preview", return_value=payload
     ) as build:
-        preview_module.main(
-            ["-c", "TEST", "--start", "2026-08-10", "--days", "7"]
-        )
+        preview_module.main(["-c", "TEST", "--start", "2026-08-10", "--days", "7"])
 
     build.assert_called_once_with(
         "TEST",

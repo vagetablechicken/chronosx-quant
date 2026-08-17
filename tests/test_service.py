@@ -99,9 +99,7 @@ def test_metrics_endpoint_returns_prometheus_text():
 
 def test_calendar_preview_endpoint_returns_upcoming_holidays():
     calendar_preview = _route_endpoint("/calendar_preview")
-    payload = calendar_preview(
-        calendar_name="SSE", days_ahead=32, check_time=None
-    )
+    payload = calendar_preview(calendar_name="SSE", days_ahead=32, check_time=None)
 
     assert payload["calendar_name"] == "SSE"
     assert payload["days_ahead"] == 32

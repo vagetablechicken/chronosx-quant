@@ -92,7 +92,7 @@ class SchedulerManager:
         Temporarily switch the active scheduler and restore it after the `with` block.
 
         Usage:
-        with SchedulerManager.use_schedule(MockSchedule()):
+        with SchedulerManager.use_scheduler(MockSchedule()):
             # run test logic
         """
         # 1. Save the previous scheduler state.
@@ -103,7 +103,7 @@ class SchedulerManager:
         SchedulerManager.set_scheduler(temp_schedule)
 
         try:
-            yield
+            yield temp_schedule
         finally:
             # 3. Restore the previous scheduler state.
             if has_old:

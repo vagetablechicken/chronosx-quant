@@ -64,6 +64,20 @@ import pandas as pd
 time = ChronoTime.now()
 time = ChronoTime("2026-03-09 11:29:00+08:00")
 
+# temporarily use another scheduler; the previous one is restored when the
+# block exits. start/end control its preloaded window.
+from chronosx_quant.scheduler import SchedulerManager, StaticMinuteScheduler
+
+cme_scheduler = StaticMinuteScheduler(
+    "CME Globex Crypto",
+    start="2026-01-01",
+    end="2026-12-31",
+)
+with SchedulerManager.use_scheduler(cme_scheduler) as scheduler:
+    time = ChronoTime("2026-03-09 17:00:00")
+    print(scheduler.calendar.name)
+    print(time.is_trading())
+
 # time about trading, only support 1min step now
 time.is_trading()
 # move 2 steps forward(2min), auto skip breaks and weekends
@@ -108,6 +122,8 @@ with travel("2026-03-09 11:29:00+08:00"):
     # only effect ChronoTime, datetime or pd.Timestamp still work
     # thread-local mock, thread-safe
     ChronoTime.now()
+
+
 ```
 
 ### Add calendar
