@@ -1,4 +1,4 @@
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 from .scheduler import use_calendar
 from .time import ChronoDay, ChronoTime

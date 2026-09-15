@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+import time
 
 import pandas as pd
 import pytest
@@ -44,12 +45,25 @@ def test_init_accepts_supported_input_types_and_normalizes_timezone(value, expec
 
 
 def test_init_accepts_an_existing_chronotime():
-    original = ChronoTime("2026-03-10T09:30:00")
+    original = ChronoTime("2026-03-10T09:30:00+08:00")
 
     result = ChronoTime(original)
 
-    assert isinstance(result, ChronoTime)
-    assert result == original
+    assert result is original
+
+
+def test_init_none_returns_now():
+    scheduler = SchedulerManager.get_scheduler()
+    before = pd.Timestamp.now(scheduler.tz)
+
+    t_empty = ChronoTime()
+    t_none = ChronoTime(None)
+
+    after = pd.Timestamp.now(scheduler.tz)
+    assert isinstance(t_empty, ChronoTime)
+    assert isinstance(t_none, ChronoTime)
+    assert before <= t_empty <= after
+    assert before <= t_none <= after
 
 
 def test_now_returns_current_time_in_scheduler_timezone():
@@ -71,6 +85,58 @@ def test_now_rejects_tz_parameter():
         match="ChronoTime.now\\(\\) does not accept 'tz'",
     ):
         ChronoTime.now(tz=scheduler.tz)
+
+
+def test_now_matches_utc_epoch():
+    utc_before = datetime.now(timezone.utc).timestamp()
+    ct = ChronoTime.now()
+    utc_after = datetime.now(timezone.utc).timestamp()
+
+    assert isinstance(ct, ChronoTime)
+    assert ct.tz == SchedulerManager.get_scheduler().tz
+    # The UTC epoch timestamp must match real-world absolute time, independent of host timezone
+    assert utc_before - 0.01 <= ct.timestamp() <= utc_after + 0.01
+
+
+def test_now_across_calendars():
+    # Verify that ChronoTime.now() across different market calendars reflects their local timezones
+    # and accurately matches the global UTC time.
+    with use_calendar("SSE"):
+        t0 = time.time()
+        ct_sse = ChronoTime.now()
+        t1 = time.time()
+        assert str(ct_sse.tz) == "Asia/Shanghai"
+        assert t0 - 0.01 <= ct_sse.timestamp() <= t1 + 0.01
+
+    with use_calendar("NYSE"):
+        t0 = time.time()
+        ct_nyse = ChronoTime.now()
+        t1 = time.time()
+        assert str(ct_nyse.tz) == "America/New_York"
+        assert t0 - 0.01 <= ct_nyse.timestamp() <= t1 + 0.01
+
+
+@pytest.mark.skipif(
+    not hasattr(time, "tzset"),
+    reason="time.tzset is only available on Unix/POSIX systems",
+)
+@pytest.mark.parametrize(
+    "machine_tz",
+    ["UTC", "America/New_York", "Asia/Tokyo", "Europe/London", "Australia/Sydney"],
+)
+def test_now_independent_of_system_timezone_unix(monkeypatch, machine_tz):
+    monkeypatch.setenv("TZ", machine_tz)
+    time.tzset()
+    try:
+        utc_before = datetime.now(timezone.utc).timestamp()
+        ct = ChronoTime.now()
+        utc_after = datetime.now(timezone.utc).timestamp()
+
+        # Regardless of host machine's timezone, ChronoTime.now() is in the scheduler timezone
+        assert ct.tz == SchedulerManager.get_scheduler().tz
+        assert utc_before <= ct.timestamp() <= utc_after
+    finally:
+        time.tzset()
 
 
 def test_time_shift():
@@ -139,54 +205,6 @@ def test_trading_times_rejects_unsupported_step():
         ChronoTime("2026-03-10T09:30:00").trading_times(
             "2026-03-10T10:30:00", step="3min"
         )
-
-
-def test_trading_day_delta():
-    assert (
-        ChronoTime("2026-03-10T09:30:00").trading_day_delta("2026-03-10T14:59:00") == 1
-    )
-    assert (
-        ChronoTime("2026-03-10T00:01:00").trading_day_delta("2026-03-10T23:59:00") == 1
-    )
-    assert (
-        ChronoTime("2026-03-10T11:29:00").trading_day_delta("2026-03-12T13:00:00") == 3
-    )
-    assert (
-        ChronoTime("2026-03-10T08:00:00").trading_day_delta("2026-03-12T20:00:00") == 3
-    )
-    assert (
-        ChronoTime("2026-03-13T14:59:00").trading_day_delta("2026-03-16T09:30:00") == 2
-    )
-    assert (
-        ChronoTime("2026-03-13T20:00:00").trading_day_delta("2026-03-16T08:00:00") == 2
-    )
-    assert (
-        ChronoTime("2026-03-16T09:30:00").trading_day_delta("2026-03-13T14:59:00") == -2
-    )
-    assert (
-        ChronoTime("2026-03-16T20:00:00").trading_day_delta("2026-03-13T08:00:00") == -2
-    )
-    assert (
-        ChronoTime("2026-03-15T09:30:00").trading_day_delta("2026-03-15T14:59:00") == 0
-    )
-    assert (
-        ChronoTime("2026-03-15T00:01:00").trading_day_delta("2026-03-16T00:01:00") == 1
-    )
-    assert (
-        ChronoTime("2026-03-14T12:00:00").trading_day_delta("2026-03-15T12:00:00") == 0
-    )
-
-
-@pytest.mark.parametrize(
-    "end",
-    [
-        datetime(2026, 3, 12, 13, 0),
-        pd.Timestamp("2026-03-12T13:00:00"),
-        ChronoTime("2026-03-12T13:00:00"),
-    ],
-)
-def test_trading_day_delta_accepts_supported_end_types(end):
-    assert ChronoTime("2026-03-10T11:29:00").trading_day_delta(end) == 3
 
 
 def test_previous_and_next():

@@ -28,6 +28,11 @@ def test_init_accepts_explicit_schedule_window():
 
     assert scheduler.schedule.index[0] == pd.Timestamp("2026-03-02")
     assert scheduler.schedule.index[-1] == pd.Timestamp("2026-03-31")
+    # pandas_market_calendars DataFrame index represents trading dates and is ALWAYS tz-naive (tz=None)
+    assert scheduler.schedule.index.tz is None
+    # While the market_open and market_close columns carry the calendar timezone
+    assert scheduler.schedule["market_open"].dt.tz == scheduler.tz
+    assert scheduler.schedule["market_close"].dt.tz == scheduler.tz
 
 
 def test_init_rejects_reversed_schedule_window():

@@ -181,49 +181,75 @@ def test_scheduler_is_trading_day_futures(calendar_name, scheduler):
 @pytest.mark.parametrize("calendar_name", ["SSE"])
 def test_scheduler_shift_trading_day(calendar_name, scheduler):
     # 1. Trading day - normal shifts and delta == 0
-    # Accepts str, date, pd.Timestamp, ChronoDay, ChronoTime
-    assert scheduler.shift_trading_day("2026-03-10", 0) == pd.Timestamp("2026-03-10")
-    assert scheduler.shift_trading_day(date(2026, 3, 10), 1) == pd.Timestamp(
+    # Accepts ChronoDay only
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-10"), 0) == pd.Timestamp(
+        "2026-03-10"
+    )
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-10"), 1) == pd.Timestamp(
         "2026-03-11"
     )
-    assert scheduler.shift_trading_day(ts("2026-03-10"), -1) == pd.Timestamp(
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-10"), -1) == pd.Timestamp(
         "2026-03-09"
     )
     assert scheduler.shift_trading_day(ChronoDay("2026-03-10"), 2) == pd.Timestamp(
         "2026-03-12"
     )
-    assert scheduler.shift_trading_day(
-        ChronoTime("2026-03-10 14:00:00"), -2
-    ) == pd.Timestamp("2026-03-06")
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-10"), -2) == pd.Timestamp(
+        "2026-03-06"
+    )
 
     # 2. Skips weekends and holidays when shifting from a trading day
     # 2026-03-13 is Friday; +1 -> 2026-03-16 (Monday)
-    assert scheduler.shift_trading_day("2026-03-13", 1) == pd.Timestamp("2026-03-16")
-    assert scheduler.shift_trading_day("2026-03-16", -1) == pd.Timestamp("2026-03-13")
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-13"), 1) == pd.Timestamp(
+        "2026-03-16"
+    )
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-16"), -1) == pd.Timestamp(
+        "2026-03-13"
+    )
     # 2026-04-30 is Thursday before Labor Day holiday (2026-05-01 to 05-05)
-    assert scheduler.shift_trading_day("2026-04-30", 1) == pd.Timestamp("2026-05-06")
-    assert scheduler.shift_trading_day("2026-05-06", -1) == pd.Timestamp("2026-04-30")
+    assert scheduler.shift_trading_day(ChronoDay("2026-04-30"), 1) == pd.Timestamp(
+        "2026-05-06"
+    )
+    assert scheduler.shift_trading_day(ChronoDay("2026-05-06"), -1) == pd.Timestamp(
+        "2026-04-30"
+    )
 
     # 3. Non-trading day (weekend / holiday) shifting
     # Sunday 2026-03-15:
-    assert scheduler.shift_trading_day("2026-03-15", 1) == pd.Timestamp("2026-03-16")
-    assert scheduler.shift_trading_day("2026-03-15", 2) == pd.Timestamp("2026-03-17")
-    assert scheduler.shift_trading_day("2026-03-15", -1) == pd.Timestamp("2026-03-13")
-    assert scheduler.shift_trading_day("2026-03-15", -2) == pd.Timestamp("2026-03-12")
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-15"), 1) == pd.Timestamp(
+        "2026-03-16"
+    )
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-15"), 2) == pd.Timestamp(
+        "2026-03-17"
+    )
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-15"), -1) == pd.Timestamp(
+        "2026-03-13"
+    )
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-15"), -2) == pd.Timestamp(
+        "2026-03-12"
+    )
 
     # Saturday 2026-03-14:
-    assert scheduler.shift_trading_day("2026-03-14", 1) == pd.Timestamp("2026-03-16")
-    assert scheduler.shift_trading_day("2026-03-14", -1) == pd.Timestamp("2026-03-13")
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-14"), 1) == pd.Timestamp(
+        "2026-03-16"
+    )
+    assert scheduler.shift_trading_day(ChronoDay("2026-03-14"), -1) == pd.Timestamp(
+        "2026-03-13"
+    )
 
     # Holiday 2026-05-01 (Labor Day):
-    assert scheduler.shift_trading_day("2026-05-01", 1) == pd.Timestamp("2026-05-06")
-    assert scheduler.shift_trading_day("2026-05-01", -1) == pd.Timestamp("2026-04-30")
+    assert scheduler.shift_trading_day(ChronoDay("2026-05-01"), 1) == pd.Timestamp(
+        "2026-05-06"
+    )
+    assert scheduler.shift_trading_day(ChronoDay("2026-05-01"), -1) == pd.Timestamp(
+        "2026-04-30"
+    )
 
     # Non-trading day with delta == 0 raises ValueError
     with pytest.raises(ValueError, match="is not a valid trading day"):
-        scheduler.shift_trading_day("2026-03-15", 0)
+        scheduler.shift_trading_day(ChronoDay("2026-03-15"), 0)
     with pytest.raises(ValueError, match="is not a valid trading day"):
-        scheduler.shift_trading_day("2026-05-01", 0)
+        scheduler.shift_trading_day(ChronoDay("2026-05-01"), 0)
 
 
 def test_scheduler_shift_trading_day_out_of_range():
@@ -247,9 +273,9 @@ def test_scheduler_shift_trading_day_out_of_range():
 
     # Out of range shifts from non-trading dates before start or after end
     with pytest.raises(IndexError, match="Shift result out of range"):
-        scheduler.shift_trading_day("2026-03-01", -1)  # Sunday before schedule start
+        scheduler.shift_trading_day(ChronoDay("2026-03-01"), -1)  # Sunday before start
     with pytest.raises(IndexError, match="Shift result out of range"):
-        scheduler.shift_trading_day("2026-03-07", 1)  # Saturday after schedule end
+        scheduler.shift_trading_day(ChronoDay("2026-03-07"), 1)  # Saturday after end
 
 
 def test_chrono_day_previous_and_next():
@@ -288,29 +314,119 @@ def test_chrono_day_previous_and_next():
 @pytest.mark.parametrize("calendar_name", ["SSE"])
 def test_scheduler_previous_and_next_trading_day(calendar_name, scheduler):
     # Trading day
-    assert scheduler.previous_trading_day("2026-03-10", inclusive=True) == pd.Timestamp(
+    t_mar10 = pd.Timestamp("2026-03-10")
+    assert scheduler.previous_trading_day(t_mar10, inclusive=True) == pd.Timestamp(
         "2026-03-10"
     )
-    assert scheduler.previous_trading_day("2026-03-10", inclusive=False) == pd.Timestamp(
+    assert scheduler.previous_trading_day(t_mar10, inclusive=False) == pd.Timestamp(
         "2026-03-09"
     )
-    assert scheduler.next_trading_day("2026-03-10", inclusive=True) == pd.Timestamp(
+    assert scheduler.next_trading_day(t_mar10, inclusive=True) == pd.Timestamp(
         "2026-03-10"
     )
-    assert scheduler.next_trading_day("2026-03-10", inclusive=False) == pd.Timestamp(
+    assert scheduler.next_trading_day(t_mar10, inclusive=False) == pd.Timestamp(
         "2026-03-11"
     )
 
     # Non-trading day (Sunday)
-    assert scheduler.previous_trading_day("2026-03-15", inclusive=True) == pd.Timestamp(
+    t_mar15 = pd.Timestamp("2026-03-15")
+    assert scheduler.previous_trading_day(t_mar15, inclusive=True) == pd.Timestamp(
         "2026-03-13"
     )
-    assert scheduler.previous_trading_day("2026-03-15", inclusive=False) == pd.Timestamp(
+    assert scheduler.previous_trading_day(t_mar15, inclusive=False) == pd.Timestamp(
         "2026-03-13"
     )
-    assert scheduler.next_trading_day("2026-03-15", inclusive=True) == pd.Timestamp(
+    assert scheduler.next_trading_day(t_mar15, inclusive=True) == pd.Timestamp(
         "2026-03-16"
     )
-    assert scheduler.next_trading_day("2026-03-15", inclusive=False) == pd.Timestamp(
+    assert scheduler.next_trading_day(t_mar15, inclusive=False) == pd.Timestamp(
         "2026-03-16"
     )
+
+    # Different timezone (UTC 2026-03-09 20:00:00 is Asia/Shanghai 2026-03-10 04:00:00)
+    t_utc = pd.Timestamp("2026-03-09 20:00:00", tz="UTC")
+    assert scheduler.previous_trading_day(t_utc, inclusive=True) == pd.Timestamp(
+        "2026-03-10"
+    )
+    assert scheduler.next_trading_day(t_utc, inclusive=True) == pd.Timestamp(
+        "2026-03-10"
+    )
+
+
+def test_timezone_conversion_before_index_lookup():
+    with use_calendar("SSE") as scheduler:
+        # 1. shift_trading_day with UTC timestamp that equals 00:00 in Asia/Shanghai
+        # 2026-03-09 16:00:00 UTC == 2026-03-10 00:00:00+08:00
+        t_utc_midnight = pd.Timestamp("2026-03-09 16:00:00", tz="UTC")
+        res = scheduler.shift_trading_day(t_utc_midnight, 1)
+        assert res == pd.Timestamp("2026-03-11")
+
+        # 2. trading_day_delta with UTC timestamps
+        t_start_utc = pd.Timestamp(
+            "2026-03-09 16:00:00", tz="UTC"
+        )  # 2026-03-10 Shanghai
+        t_end_utc = pd.Timestamp("2026-03-11 16:00:00", tz="UTC")  # 2026-03-12 Shanghai
+        assert scheduler.trading_day_delta(t_start_utc, t_end_utc) == 3
+
+        # 3. ChronoDay initialized from UTC timestamp still recognizes trading day correctly
+        day_utc = ChronoDay(pd.Timestamp("2026-03-09 16:00:00", tz="UTC"))
+        assert day_utc == ChronoDay("2026-03-10")
+        assert day_utc.is_trading()
+        assert day_utc.session_start == ChronoTime("2026-03-10 09:30:00")
+
+        # 4. is_trading with naive, Shanghai-aware, and UTC-aware timestamps
+        # 2026-03-10 09:31:00 is trading
+        t_naive = pd.Timestamp("2026-03-10 09:31:00")
+        t_shanghai = pd.Timestamp("2026-03-10 09:31:00", tz="Asia/Shanghai")
+        t_utc = pd.Timestamp("2026-03-10 01:31:00", tz="UTC")
+        assert scheduler.is_trading(t_naive)
+        assert scheduler.is_trading(t_shanghai)
+        assert scheduler.is_trading(t_utc)
+
+        # 5. get_trading_date with naive, Shanghai-aware, and UTC-aware timestamps
+        expected_date = pd.Timestamp("2026-03-10")
+        assert scheduler.get_trading_date(t_naive) == expected_date
+        assert scheduler.get_trading_date(t_shanghai) == expected_date
+        assert scheduler.get_trading_date(t_utc) == expected_date
+
+        # 6. to_session_start & to_session_end
+        expected_open = pd.Timestamp("2026-03-10 09:30:00", tz="Asia/Shanghai")
+        expected_close = pd.Timestamp("2026-03-10 15:00:00", tz="Asia/Shanghai")
+        assert scheduler.to_session_start(t_naive) == expected_open
+        assert scheduler.to_session_start(t_utc) == expected_open
+        assert scheduler.to_session_end(t_naive) == expected_close
+        assert scheduler.to_session_end(t_utc) == expected_close
+
+        # 7. shift with naive and UTC
+        assert scheduler.shift(t_naive, 1) == pd.Timestamp(
+            "2026-03-10 09:32:00", tz="Asia/Shanghai"
+        )
+        assert scheduler.shift(t_utc, 1) == pd.Timestamp(
+            "2026-03-10 09:32:00", tz="Asia/Shanghai"
+        )
+
+        # 8. previous_trading_time & next_trading_time with naive and UTC
+        assert scheduler.previous_trading_time(t_naive) == pd.Timestamp(
+            "2026-03-10 09:31:00", tz="Asia/Shanghai"
+        )
+        assert scheduler.previous_trading_time(t_utc) == pd.Timestamp(
+            "2026-03-10 09:31:00", tz="Asia/Shanghai"
+        )
+        assert scheduler.next_trading_time(t_naive) == pd.Timestamp(
+            "2026-03-10 09:31:00", tz="Asia/Shanghai"
+        )
+        assert scheduler.next_trading_time(t_utc) == pd.Timestamp(
+            "2026-03-10 09:31:00", tz="Asia/Shanghai"
+        )
+
+        # 9. trading_times with naive and UTC
+        times_naive = scheduler.trading_times(
+            pd.Timestamp("2026-03-10 09:30:00"), pd.Timestamp("2026-03-10 09:33:00")
+        )
+        times_utc = scheduler.trading_times(
+            pd.Timestamp("2026-03-10 01:30:00", tz="UTC"),
+            pd.Timestamp("2026-03-10 01:33:00", tz="UTC"),
+        )
+        assert len(times_naive) == 3
+        assert len(times_utc) == 3
+        assert (times_naive == times_utc).all()

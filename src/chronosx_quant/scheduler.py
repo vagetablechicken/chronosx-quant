@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import tzinfo
 from functools import wraps
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import pandas as pd
 import pandas_market_calendars as mcal
@@ -179,10 +179,10 @@ class Scheduler(Protocol):
     ) -> pd.Timestamp | None: ...
 
     def previous_trading_day(
-        self, day: Any, *, inclusive: bool = True
+        self, day: pd.Timestamp, *, inclusive: bool = True
     ) -> pd.Timestamp | None: ...
     def next_trading_day(
-        self, day: Any, *, inclusive: bool = True
+        self, day: pd.Timestamp, *, inclusive: bool = True
     ) -> pd.Timestamp | None: ...
 
     def is_trading(self, time: pd.Timestamp) -> bool: ...
@@ -448,6 +448,7 @@ class StaticMinuteScheduler(Scheduler):
         step : {"1min"}, default "1min"
             Unit of progression. Only "1min" is supported.
         """
+        time = self._to_market_time(time)
         second = time.second
         microsecond = time.microsecond
         time_clean = time.replace(second=0, microsecond=0)
@@ -472,18 +473,51 @@ class StaticMinuteScheduler(Scheduler):
         assert isinstance(shifted, pd.Timestamp)
         return shifted.replace(second=second, microsecond=microsecond)
 
-    def shift_trading_day(self, day: Any, delta: int) -> pd.Timestamp:
+    def _to_market_time(self, time: pd.Timestamp) -> pd.Timestamp:
+        """
+        Convert timestamp to calendar's market timezone (`self.tz`).
+
+        Rules:
+        - Naive inputs are interpreted as market wall-clock time (`tz_localize(self.tz)`).
+        - Aware inputs are converted to market timezone (`tz_convert(self.tz)`).
+        """
+        if not isinstance(time, pd.Timestamp):
+            time = pd.Timestamp(time)
+        if time.tzinfo is None:
+            return time.tz_localize(self.tz)
+        if time.tz != self.tz:
+            return time.tz_convert(self.tz)
+        return time
+
+    def _to_trading_date(self, day: pd.Timestamp) -> pd.Timestamp:
+        """Convert timestamp to scheduler timezone, strip timezone, and normalize to 00:00."""
+        if not isinstance(day, pd.Timestamp):
+            day = pd.Timestamp(day)
+        if day.tzinfo is not None:
+            day = day.tz_convert(self.tz).tz_localize(None)
+        return day.normalize()
+
+    def shift_trading_day(self, day: pd.Timestamp, delta: int) -> pd.Timestamp:
         """Shift a trading day forward or backward by trading days on the calendar.
 
         Parameters
         ----------
-        day : Any
-            Reference date or timestamp.
+        day : pd.Timestamp
+            Reference day at 00:00 (e.g. ``ChronoDay``).
         delta : int
             Number of trading days to shift. Positive into the future, negative into the past.
         """
+        day_local = day.tz_convert(self.tz) if day.tzinfo is not None else day
+        if (
+            day_local.hour,
+            day_local.minute,
+            day_local.second,
+            day_local.microsecond,
+        ) != (0, 0, 0, 0):
+            raise ValueError(f"Day {day} must be a timestamp at 00:00")
+
         dates = self.schedule.index
-        target = pd.Timestamp(str(day)[:10])
+        target = self._to_trading_date(day)
 
         if target in dates:
             loc = dates.get_loc(target)
@@ -494,9 +528,7 @@ class StaticMinuteScheduler(Scheduler):
         else:
             # `day` is on a non-trading calendar date (weekend or holiday)
             if delta < 0:
-                preceding_idx = (
-                    int(dates.searchsorted(cast(Any, target), side="right")) - 1
-                )
+                preceding_idx = int(dates.searchsorted(target, side="right")) - 1
                 if preceding_idx < 0:
                     raise IndexError(
                         f"Shift result out of range for {self.calendar.name}: "
@@ -504,7 +536,7 @@ class StaticMinuteScheduler(Scheduler):
                     )
                 target_idx = preceding_idx + (delta + 1)
             elif delta > 0:
-                succeeding_idx = int(dates.searchsorted(cast(Any, target), side="left"))
+                succeeding_idx = int(dates.searchsorted(target, side="left"))
                 if succeeding_idx >= len(dates):
                     raise IndexError(
                         f"Shift result out of range for {self.calendar.name}: "
@@ -522,20 +554,15 @@ class StaticMinuteScheduler(Scheduler):
                 f"day={day}, delta={delta}"
             )
 
-        return cast(pd.Timestamp, dates[target_idx])
+        return dates[target_idx]
 
     def previous_trading_day(
-        self, day: Any, *, inclusive: bool = True
+        self, day: pd.Timestamp, *, inclusive: bool = True
     ) -> pd.Timestamp | None:
         """Return the nearest trading day at or before ``day``."""
         dates = self.schedule.index
-        target = pd.Timestamp(str(day)[:10])
-        idx = int(
-            dates.searchsorted(
-                cast(Any, target), side="right" if inclusive else "left"
-            )
-            - 1
-        )
+        target = self._to_trading_date(day)
+        idx = int(dates.searchsorted(target, side="right" if inclusive else "left") - 1)
         if idx < 0:
             return None
         res = dates[idx]
@@ -543,16 +570,12 @@ class StaticMinuteScheduler(Scheduler):
         return res
 
     def next_trading_day(
-        self, day: Any, *, inclusive: bool = True
+        self, day: pd.Timestamp, *, inclusive: bool = True
     ) -> pd.Timestamp | None:
         """Return the nearest trading day at or after ``day``."""
         dates = self.schedule.index
-        target = pd.Timestamp(str(day)[:10])
-        idx = int(
-            dates.searchsorted(
-                cast(Any, target), side="left" if inclusive else "right"
-            )
-        )
+        target = self._to_trading_date(day)
+        idx = int(dates.searchsorted(target, side="left" if inclusive else "right"))
         if idx >= len(dates):
             return None
         res = dates[idx]
@@ -564,8 +587,10 @@ class StaticMinuteScheduler(Scheduler):
         self, start: pd.Timestamp, end: pd.Timestamp, *, step: str = "1min"
     ) -> pd.Series:
         # [start, end)
-        left_idx = self.trading_minutes.searchsorted(cast(Any, start), side="left")
-        right_idx = self.trading_minutes.searchsorted(cast(Any, end), side="left")
+        start = self._to_market_time(start)
+        end = self._to_market_time(end)
+        left_idx = self.trading_minutes.searchsorted(start, side="left")
+        right_idx = self.trading_minutes.searchsorted(end, side="left")
         return self.trading_minutes[left_idx:right_idx].to_series()
 
     def trading_day_delta(self, start: pd.Timestamp, end: pd.Timestamp) -> int:
@@ -589,19 +614,15 @@ class StaticMinuteScheduler(Scheduler):
         - Monday back to previous Friday -> -2
         - same non-trading day -> 0
         """
-        start_day = start.normalize().tz_localize(None)
-        end_day = end.normalize().tz_localize(None)
+        start_day = self._to_trading_date(start)
+        end_day = self._to_trading_date(end)
         if start_day <= end_day:
-            left_idx = self.schedule.index.searchsorted(
-                cast(Any, start_day), side="left"
-            )
-            right_idx = self.schedule.index.searchsorted(
-                cast(Any, end_day), side="right"
-            )
+            left_idx = self.schedule.index.searchsorted(start_day, side="left")
+            right_idx = self.schedule.index.searchsorted(end_day, side="right")
             return int(right_idx - left_idx)
 
-        left_idx = self.schedule.index.searchsorted(cast(Any, end_day), side="left")
-        right_idx = self.schedule.index.searchsorted(cast(Any, start_day), side="right")
+        left_idx = self.schedule.index.searchsorted(end_day, side="left")
+        right_idx = self.schedule.index.searchsorted(start_day, side="right")
         return -int(right_idx - left_idx)
 
     @require_1min_step
@@ -610,10 +631,11 @@ class StaticMinuteScheduler(Scheduler):
     ) -> pd.Timestamp | None:
         # inclusive, search right means > time, -1 must be <= time
         # exclusive, search left means >= time, -1 must be < time
-        # TODO: binary search is quick, but time may out of range
+        # NOTE: binary search is quick, but time may out of range
+        time = self._to_market_time(time)
         idx = int(
             self.trading_minutes.searchsorted(
-                cast(Any, time), side="right" if inclusive else "left"
+                time, side="right" if inclusive else "left"
             )
             - 1
         )
@@ -629,9 +651,10 @@ class StaticMinuteScheduler(Scheduler):
     ) -> pd.Timestamp | None:
         # inclusive, search left means >= time
         # exclusive, search right means > time
+        time = self._to_market_time(time)
         idx = int(
             self.trading_minutes.searchsorted(
-                cast(Any, time), side="left" if inclusive else "right"
+                time, side="left" if inclusive else "right"
             )
         )
         if idx >= len(self.trading_minutes):
@@ -642,6 +665,7 @@ class StaticMinuteScheduler(Scheduler):
 
     def is_trading(self, time: pd.Timestamp) -> bool:
         """Check if the time is a trading time."""
+        time = self._to_market_time(time)
         time_ns = time.value
         # Find the last interval whose left edge is <= time. Intervals are
         # left-closed/right-open, so the right edge itself is not tradable.
@@ -651,10 +675,7 @@ class StaticMinuteScheduler(Scheduler):
     # TODO: it should be is_active_trading_date, rename it
     def is_trading_day(self, time: pd.Timestamp) -> bool:
         """Check if the date is in trading, no matter if it's a trading time."""
-        if time.tzinfo is None:
-            time = time.tz_localize(self.tz)
-        elif time.tz != self.tz:
-            time = time.tz_convert(self.tz)
+        time = self._to_market_time(time)
 
         # trading day may start from previous day, use interval to check
         day_start = time.normalize()
@@ -672,6 +693,7 @@ class StaticMinuteScheduler(Scheduler):
 
     def _get_session_loc(self, time: pd.Timestamp) -> int:
         """Return the position of the session containing one timestamp."""
+        time = self._to_market_time(time)
         time_ns = time.value
         # `side="right"` finds the first open > time; -1 gives the last open <= time.
         idx = int(self._session_opens_ns.searchsorted(time_ns, side="right")) - 1
@@ -691,4 +713,4 @@ class StaticMinuteScheduler(Scheduler):
     def get_trading_date(self, time: pd.Timestamp) -> pd.Timestamp:
         """Return the trading date of the session containing ``time``."""
         idx = self._get_session_loc(time)
-        return cast(pd.Timestamp, self.schedule.index[idx])
+        return self.schedule.index[idx]

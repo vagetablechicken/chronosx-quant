@@ -97,9 +97,6 @@ time.trading_times(end=pd.Timestamp("2026-03-09 13:01:00+08:00"))
 # series can aggregate, e.g. get all date in trading series
 time.trading_times(end=pd.Timestamp("2026-03-09 13:01:00+08:00")).resample('D').first()
 
-# simpler trading day calculation
-print(ChronoTime("2026-04-08").trading_day_delta("2026-04-09"))
-
 # move to the beginning of trading session which the time belongs to
 # e.g. SSE "2026-03-08 11:29:00+08:00" belongs to session '2026-03-08', so the session start is '2026-03-08 09:30:00+08:00'
 # e.g. CME session '2026-03-08' starts from '2026-03-07 17:00:00-06:00', so the session start is '2026-03-07 17:00:00-06:00', not '2026-03-08 00:00:00+00:00'
@@ -124,7 +121,6 @@ with travel("2026-03-09 11:29:00+08:00"):
     # only effect ChronoTime, datetime or pd.Timestamp still work
     # thread-local mock, thread-safe
     ChronoTime.now()
-
 
 ```
 
@@ -228,8 +224,8 @@ Useful notes:
 
 Benchmark preview:
 
-Source: `.benchmarks/chrono.json`, generated on 2026-08-14 with
-chronosx-quant `0.3.0b3`, Windows 10, an Intel Core i9-14900HX (32 logical
+Source: `.benchmarks/chrono.json`, generated on 2026-09-15 with
+chronosx-quant `0.3.1`, Windows 11, an Intel Core i9-14900HX (32 logical
 CPUs), and CPython 3.10.19.
 
 Each parameterized benchmark case has its own median. The representative value
@@ -240,19 +236,19 @@ cases during this run.
 
 | Operation | Representative median | Case median range |
 | --- | ---: | ---: |
-| `ChronoTime(...)` | 8.75 µs | 8.75 µs |
-| `shift` | 14.00 µs | 12.90–144.10 µs |
-| `is_trading` | 1.06 µs | 0.87–9.26 µs |
-| `is_trading_day` | 35.85 µs | 28.00–410.70 µs |
-| `trading_times` (one-hour range) | 31.85 µs | 28.90–280.50 µs |
-| `previous_trading_time` | 8.32 µs | 6.75–76.45 µs |
-| `next_trading_time` | 9.55 µs | 6.90–85.35 µs |
-| `ChronoTime.now()` | 28.62 µs | 2.74–28.90 µs |
-| mocked `ChronoTime.now()` | 0.48 µs | 0.14–0.97 µs |
+| `ChronoTime(...)` | 9.05 µs | 9.05 µs |
+| `shift` | 14.25 µs | 13.50–15.10 µs |
+| `is_trading` | 0.88 µs | 0.85–0.94 µs |
+| `is_trading_day` | 16.80 µs | 16.00–17.50 µs |
+| `trading_times` (one-hour range) | 28.15 µs | 26.80–31.10 µs |
+| `previous_trading_time` | 7.25 µs | 7.00–8.00 µs |
+| `next_trading_time` | 7.40 µs | 7.15–7.80 µs |
+| `ChronoTime.now()` | 2.70 µs | 2.64–2.78 µs |
+| mocked `ChronoTime.now()` | 0.24 µs | 0.22–0.24 µs |
 
 Schedule-size preview:
 
-Source: `.benchmarks/schedule-size.json`, generated on 2026-08-21 with the
+Source: `.benchmarks/schedule-size.json`, generated on 2026-09-15 with the
 schedule-size command above on the same host and Python version. These are
 warm-state lookup measurements; scheduler construction is not included.
 
@@ -264,9 +260,9 @@ contrast, grows approximately linearly with the loaded window.
 
 | Schedule window | Sessions | Total scheduler memory | `get_trading_date` | `to_session_start` | `to_session_end` |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 3 years | 727 | 1.36 MiB | 4.20 µs | 4.77 µs | 5.13 µs |
-| 6 years | 1,455 | 2.73 MiB | 4.20 µs | 4.90 µs | 4.87 µs |
-| 10 years | 2,430 | 4.56 MiB | 4.27 µs | 5.00 µs | 5.00 µs |
+| 3 years | 727 | 1.36 MiB | 2.88 µs | 3.52 µs | 3.27 µs |
+| 6 years | 1,455 | 2.73 MiB | 2.95 µs | 3.40 µs | 3.45 µs |
+| 10 years | 2,430 | 4.56 MiB | 2.86 µs | 3.45 µs | 3.40 µs |
 
 ## Docker Service
 

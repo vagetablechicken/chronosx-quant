@@ -26,28 +26,3 @@ def test_cme_specials(get_scheduler):
 
         t1 = ChronoTime("2025-12-24T00:00:00").to_session_end()
         assert t1.isoformat() == "2025-12-24T12:15:00-06:00"
-
-        assert (
-            ChronoTime("2025-12-07T15:58:00").trading_day_delta("2025-12-07T18:00:00")
-            == 0
-        )
-        assert (
-            ChronoTime("2025-12-07T15:58:00").trading_day_delta("2025-12-08T16:30:00")
-            == 1
-        )
-        assert (
-            ChronoTime("2025-12-26T15:58:00").trading_day_delta("2025-12-28T17:02:00")
-            == 1
-        )
-        assert (
-            ChronoTime("2025-12-28T17:00:00").trading_day_delta("2025-12-29T16:00:00")
-            == 1
-        )
-        assert (
-            ChronoTime("2025-12-29T16:30:00").trading_day_delta("2025-12-30T10:00:00")
-            == 2
-        )
-        assert (
-            ChronoTime("2025-12-30T10:00:00").trading_day_delta("2025-12-29T16:30:00")
-            == -2
-        )

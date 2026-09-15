@@ -31,7 +31,7 @@ class ChronoTime(pd.Timestamp):
         Parameters
         ----------
         tz : Any, optional
-            Explicit time zone. Must be ``None``. Passing any non-None value raises
+            Must be ``None``. Passing any non-None value raises
             a :exc:`ValueError` because the time zone is strictly managed by the
             active :class:`~chronosx_quant.scheduler.SchedulerManager`. This parameter
             is retained solely for signature compatibility with :meth:`pandas.Timestamp.now`.
@@ -39,30 +39,42 @@ class ChronoTime(pd.Timestamp):
         Returns
         -------
         ChronoTime
-            The current timestamp normalized to the active scheduler's time zone,
-            or the active mocked timestamp when time travel is active.
-
-        Raises
-        ------
-        ValueError
-            If ``tz`` is not ``None``.
         """
         if tz is not None:
             raise ValueError(
                 "ChronoTime.now() does not accept 'tz'; time zone is strictly managed by SchedulerManager."
             )
-        stack = cls._get_stack()
-        if stack:
-            # Use the top-most mocked value when time travel is active.
-            return stack[-1]
-        return cls(pd.Timestamp.now())
+        return cls()
 
-    def __new__(cls, ts: Any) -> ChronoTime:
-        """Create a timestamp normalized to the active scheduler timezone."""
-        temp_ts = pd.Timestamp(ts)
+    def __new__(cls, ts: Any = None) -> ChronoTime:
+        """
+        Create a timestamp normalized to the active scheduler timezone.
+
+        Timezone Handling Rules:
+        -------------------------
+        1. **Current Time**: If ``ts is None``, returns the current scheduler-aware time.
+           Always use ``ChronoTime.now()`` or ``ChronoTime()`` to retrieve current time;
+           it internally resolves the global UTC time into the scheduler timezone accurately.
+        2. **Naive Inputs**: Any timezone-naive input (string, datetime, Timestamp) is
+           strictly interpreted as **market wall-clock time** in the scheduler timezone
+           (i.e. localized directly to ``scheduler.tz``).
+        3. **Host Time Warnings**: Do NOT wrap host-system naive timestamps like
+           ``ChronoTime(datetime.now())`` or ``ChronoTime(pd.Timestamp.now())``, as they
+           represent host OS time (e.g., UTC in Docker containers) rather than market time
+           and will cause silent timezone offsets.
+        4. **Aware Inputs**: Timezone-aware inputs are converted into ``scheduler.tz``.
+        """
+        if ts is None:
+            stack = cls._get_stack()
+            if stack:
+                return stack[-1]
+        elif isinstance(ts, ChronoTime):
+            return ts
+
+        default_tz = SchedulerManager.get_scheduler().tz
+        temp_ts = pd.Timestamp.now(tz=default_tz) if ts is None else pd.Timestamp(ts)
         if isinstance(temp_ts, type(pd.NaT)):
             raise ValueError(f"Invalid timestamp: {ts!r}")
-        default_tz = SchedulerManager.get_scheduler().tz
         if temp_ts.tz is None:
             temp_ts = temp_ts.tz_localize(default_tz)
         elif temp_ts.tz != default_tz:
@@ -94,45 +106,6 @@ class ChronoTime(pd.Timestamp):
         """Return the trading timestamps in the half-open interval ``[self, end)``."""
         return SchedulerManager.get_scheduler().trading_times(
             start=self, end=ChronoTime(end), step=step
-        )
-
-    def trading_day_delta(self, end: datetime | ChronoTime | pd.Timestamp | str) -> int:
-        """
-        Return the signed trading-day distance between `self` and `end`.
-
-        This is only an approximate trading-day count. It works at the date level,
-        not the full-session level, so it ignores intraday coverage and does not
-        try to measure exact tradable duration.
-
-        Counting is based on trading-day dates in a left-closed, right-closed
-        interval: [self_day, end_day]. If both timestamps are on the same trading
-        day, the delta is 1. If an endpoint falls on a non-trading date, that date
-        contributes 0. Forward ranges return a positive count and backward ranges
-        return a negative count.
-
-        In other words, this method counts trading dates, not tradable minutes
-        or full-session coverage. A same-day trading interval returns 1, a
-        same-day non-trading interval returns 0, and weekends or holidays
-        inside the date span are skipped unless one of those dates is itself a
-        trading day.
-
-        Examples:
-        - `ChronoTime("2026-03-10T09:30:00").trading_day_delta("2026-03-10T14:59:00") == 1`
-          because both timestamps fall on the same trading date, so the closed
-          date range contains exactly one trading day
-        - `ChronoTime("2026-03-10T11:29:00").trading_day_delta("2026-03-12T13:00:00") == 3`
-          because the date range covers `2026-03-10`, `2026-03-11`, and
-          `2026-03-12`, and all three are trading dates
-        - `ChronoTime("2026-03-16T09:30:00").trading_day_delta("2026-03-13T14:59:00") == -2`
-          because the covered trading dates are `2026-03-13` and
-          `2026-03-16`; the weekend dates in between do not count, and the
-          reverse direction makes the result negative
-        - `ChronoTime("2026-03-15T09:30:00").trading_day_delta("2026-03-15T14:59:00") == 0`
-          because both timestamps fall on the same non-trading date, so the
-          date range contains zero trading days
-        """
-        return SchedulerManager.get_scheduler().trading_day_delta(
-            start=self, end=ChronoTime(end)
         )
 
     def previous_trading_time(
@@ -281,10 +254,11 @@ class ChronoDay(pd.Timestamp):
     def _get_session_idx(self) -> int:
         scheduler = SchedulerManager.get_scheduler()
         dates = scheduler.schedule.index
-        target = pd.Timestamp(self.strftime("%Y-%m-%d"))
+        self_local = self.tz_convert(scheduler.tz) if self.tzinfo is not None else self
+        target = pd.Timestamp(self_local.strftime("%Y-%m-%d"))
         if target not in dates:
             raise ValueError(
-                f"Date {self.strftime('%Y-%m-%d')} is not a valid trading day for {scheduler.calendar.name}"
+                f"Date {self_local.strftime('%Y-%m-%d')} is not a valid trading day for {scheduler.calendar.name}"
             )
         idx = dates.get_loc(target)
         if not isinstance(idx, int):
@@ -316,7 +290,8 @@ class ChronoDay(pd.Timestamp):
     def is_trading(self) -> bool:
         """Return True if this date is a trading day in the active calendar."""
         scheduler = SchedulerManager.get_scheduler()
-        target = pd.Timestamp(self.strftime("%Y-%m-%d"))
+        self_local = self.tz_convert(scheduler.tz) if self.tzinfo is not None else self
+        target = pd.Timestamp(self_local.strftime("%Y-%m-%d"))
         return target in scheduler.schedule.index
 
     def delta(self, other: Any) -> int:
