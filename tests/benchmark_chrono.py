@@ -1,10 +1,10 @@
-import pytest
 import pandas as pd
+import pytest
+
 from chronosx_quant import __version__
 from chronosx_quant.mock import travel
-from chronosx_quant.scheduler import StaticMinuteScheduler, SchedulerManager
+from chronosx_quant.scheduler import SchedulerManager, StaticMinuteScheduler
 from chronosx_quant.time import ChronoTime
-
 
 CALENDARS = ["SSE", "CME Globex Crypto", "ICE", "CN_FUTURES_2300"]
 TIME_POSITIONS = [

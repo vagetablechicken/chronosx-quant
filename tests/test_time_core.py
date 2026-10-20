@@ -1,5 +1,5 @@
-from datetime import date, datetime, timezone
 import time
+from datetime import date, datetime, timezone
 
 import pandas as pd
 import pytest

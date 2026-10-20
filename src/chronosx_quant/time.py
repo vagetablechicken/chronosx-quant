@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
 import threading
 from datetime import datetime
+from typing import Any, cast
 
 import pandas as pd
 

@@ -7,7 +7,6 @@ from pandas_market_calendars.market_calendar import MarketCalendar
 
 from chronosx_quant import ChronoTime, use_calendar
 from chronosx_quant.scheduler import SchedulerManager, StaticMinuteScheduler
-
 from tests.helpers import ts, use_tz
 
 

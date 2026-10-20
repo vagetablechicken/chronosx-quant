@@ -15,19 +15,26 @@ pip install chronosx-quant
 
 # `cxq` stands for ChronosX Quant. It is the short command for
 # `chronosx-preview`; both commands provide the same functionality.
-# shortest forms: q=check, h=holidays, ls=calendars
+# shortest forms: cal=calendar/session, ls=calendars, h=holidays, q=check
 # calendar aliases: sse, cme, f23, f01, f02
 cxq ls
-cxq q "2026-08-10 21:00" -c f23
-cxq h -c sse -s 2026-08-10 -d 10
+cxq cal f23                           # inspect session timing, breaks, and weekend trading
+cxq cal cme
+cxq q "2026-08-10 21:00" -c f23       # inspect one timestamp
+cxq h -c sse -s 2026-08-10 -d 10      # list holidays in a range
 
 # full command:
+# inspect session start/end, trading intervals, and weekend openings
+chronosx-preview calendar -c f23
+chronosx-preview calendar cme
+
 # list holidays (the default command, SSE by default)
 chronosx-preview
 chronosx-preview --start 2026-08-10 --days 60
 
-# show the stable numeric calendar IDs
+# show supported numeric calendar IDs and aliases
 chronosx-preview calendars
+chronosx-preview calendars f23
 
 # list holidays for another calendar (3 = CN_FUTURES_2300)
 chronosx-preview holidays -c 3 --start 2026-08-10
@@ -171,6 +178,96 @@ For SHF/DCE in China, calendars have multiple breaks. These three built-in varia
 I use static minute scheduler for speed, don't support multi step in the same time, and don't support extend schedule time range. It's ok to add new scheduler to support multi step or dynamic time range.
 
 - [ ] dynamic range scheduler cache?
+
+## Calendar Preview (CLI & API)
+
+Chronosx provides both a command-line tool (`cxq` / `chronosx-preview`) and Python APIs to inspect trading session hours, intra-day trading breaks, upcoming holidays, and weekend trading schedules.
+
+### Supported Calendars & Aliases
+
+| ID | Alias | Calendar Name | Description |
+|---|---|---|---|
+| 1 | `sse` | `SSE` *(default)* | Shanghai Stock Exchange (`09:30 - 15:00`) |
+| 2 | `cme` | `CME Globex Crypto` | CME Crypto futures (`17:00 (T-1) - 16:00 (T)`, Sunday night open) |
+| 3 | `f23` | `CN_FUTURES_2300` | China futures (`21:00 (T-1) - 23:00 (T-1)` night session) |
+| 4 | `f01` | `CN_FUTURES_0100` | China futures (`21:00 (T-1) - 01:00 (T)` night session) |
+| 5 | `f02` | `CN_FUTURES_0230` | China futures (`21:00 (T-1) - 02:30 (T)` night session) |
+
+Any valid `pandas_market_calendars` calendar name is also accepted.
+
+### CLI Usage (`cxq` / `chronosx-preview`)
+
+`cxq` is the short alias for `chronosx-preview`. Short subcommands: `cal` (session), `ls` (calendars), `h` (holidays), `q` (check).
+
+```bash
+# 1. Inspect session details (start/end, breaks, Friday night, Saturday/Sunday trading)
+cxq cal f02
+cxq cal cme
+cxq session sse
+
+# 2. List calendars or inspect a specific calendar
+cxq ls
+cxq ls f23
+
+# 3. Check a specific timestamp
+cxq q "2026-08-10 21:00" -c f23
+
+# 4. List upcoming holidays (default: today + 32 days)
+cxq h -c sse -s 2026-08-10 -d 30
+```
+
+Example session output (`cxq cal f02`):
+
+```text
+Calendar:              CN_FUTURES_0230 (China Futures Night Session 02:30 Close) [ID: 5] [alias: f02]
+Timezone:              Asia/Shanghai
+Session start:         21:00 (T-1)
+Session end:           15:00 (T)
+Trading duration:      9h 15m (555 min)
+Trading intervals:
+  21:00 (T-1) - 02:30 (T)    (330 min)
+  09:00 (T) - 10:15 (T)      (75 min)
+  10:30 (T) - 11:30 (T)      (60 min)
+  13:30 (T) - 15:00 (T)      (90 min)
+Friday night open:     yes (opens Friday 21:00, closes Saturday 02:30, part of Monday session)
+Saturday trading:      yes (00:00 - 02:30)
+Sunday trading:        no
+Sunday night open:     no
+Monday session open:   Friday 21:00
+Friday session close:  Friday 15:00
+```
+
+### Python API
+
+```python
+from chronosx_quant.preview import (
+    build_session_preview,
+    build_holiday_preview,
+    build_time_preview,
+    build_calendar_preview,
+)
+
+# Inspect trading session timing, breaks, and weekend trading
+session = build_session_preview("f02")
+print(session["session_start"])               # "21:00 (T-1)"
+print(session["total_trading_hours"])         # "9h 15m"
+print(session["saturday_trading"])            # True (00:00 - 02:30)
+print(session["sunday_trading"])              # False
+
+# Check CME Sunday trading
+cme_session = build_session_preview("cme")
+print(cme_session["sunday_trading"])          # True (17:00 - 24:00)
+print(cme_session["sunday_night_open"])       # True
+
+# List upcoming holidays
+holidays = build_holiday_preview("SSE", start="2026-01-01", days_ahead=60)
+print(holidays["upcoming_holidays"])
+
+# Inspect whether a specific timestamp is trading time / trading day
+info = build_time_preview("f23", "2026-08-10 21:00")
+print(info["is_trading_time"])                # True
+print(info["trading_date"])                   # "2026-08-11"
+```
 
 ## Benchmark
 
@@ -330,7 +427,7 @@ curl "http://localhost:8000/calendar_preview?calendar_name=SSE&days_ahead=32"
 curl "http://localhost:8000/calendar_preview?calendar_name=SSE&check_time=2026-08-10%2009:30"
 ```
 
-The preview response helps verify upcoming holidays and recent holiday definitions for a calendar. It includes:
+The preview response helps verify upcoming holidays, session timings, and recent holiday definitions for a calendar. It includes:
 
 - `calendar_name`
 - `calendar_full_name`
@@ -340,6 +437,7 @@ The preview response helps verify upcoming holidays and recent holiday definitio
 - `range_end`
 - `latest_holidays`
 - `upcoming_holidays`
+- `session` (session start/end, trading duration, intra-day intervals, Friday night open, Saturday/Sunday trading)
 
 When `check_time` is supplied, `check` also includes the calendar-local time,
 date, weekday, whether the date is a trading day, whether the instant is a

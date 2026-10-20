@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
-from dataclasses import asdict, dataclass
 from contextlib import contextmanager
+from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import Any, Generator, cast
 

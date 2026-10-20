@@ -332,3 +332,90 @@ def test_main_accepts_short_check_and_calendar_alias():
         "CN_FUTURES_2300",
         "2026-08-10 21:00",
     )
+
+
+def test_build_session_preview_real_calendars():
+    sse = preview_module.build_session_preview("SSE")
+    assert sse["calendar_name"] == "SSE"
+    assert sse["session_start"] == "09:30 (T)"
+    assert sse["session_end"] == "15:00 (T)"
+    assert sse["total_trading_minutes"] == 240
+    assert sse["friday_night_open"] is False
+    assert sse["saturday_trading"] is False
+    assert sse["sunday_trading"] is False
+    assert sse["sunday_night_open"] is False
+    assert sse["monday_session_open"] == "Monday 09:30"
+    assert sse["friday_session_close"] == "Friday 15:00"
+
+    cme = preview_module.build_session_preview("cme")
+    assert cme["calendar_name"] == "CME Globex Crypto"
+    assert cme["session_start"] == "17:00 (T-1)"
+    assert cme["session_end"] == "16:00 (T)"
+    assert cme["total_trading_minutes"] == 1380
+    assert cme["friday_night_open"] is False
+    assert cme["saturday_trading"] is False
+    assert cme["sunday_trading"] is True
+    assert "17:00" in str(cme["sunday_trading_description"])
+    assert cme["sunday_night_open"] is True
+    assert cme["monday_session_open"] == "Sunday 17:00"
+    assert cme["friday_session_close"] == "Friday 16:00"
+
+    f23 = preview_module.build_session_preview("f23")
+    assert f23["calendar_name"] == "CN_FUTURES_2300"
+    assert f23["session_start"] == "21:00 (T-1)"
+    assert f23["session_end"] == "15:00 (T)"
+    assert f23["total_trading_minutes"] == 345
+    assert f23["friday_night_open"] is True
+    assert f23["saturday_trading"] is False
+    assert f23["sunday_trading"] is False
+    assert f23["sunday_night_open"] is False
+    assert f23["monday_session_open"] == "Friday 21:00"
+    assert f23["friday_session_close"] == "Friday 15:00"
+
+    f02 = preview_module.build_session_preview("f02")
+    assert f02["calendar_name"] == "CN_FUTURES_0230"
+    assert f02["total_trading_minutes"] == 555
+    assert f02["friday_night_open"] is True
+    assert f02["saturday_trading"] is True
+    assert "00:00 - 02:30" in str(f02["saturday_trading_description"])
+    assert f02["sunday_trading"] is False
+    assert f02["sunday_night_open"] is False
+
+
+def test_combined_preview_includes_session():
+    preview = preview_module.build_calendar_preview("SSE", days_ahead=7)
+    assert "upcoming_holidays" in preview
+    assert "session" in preview
+    session = preview["session"]
+    assert isinstance(session, dict)
+    assert session["calendar_name"] == "SSE"
+    assert session["session_start"] == "09:30 (T)"
+
+
+def test_main_calendar_command(capsys):
+    preview_module.main(["calendar", "-c", "f23"])
+    output = capsys.readouterr().out
+    assert "CN_FUTURES_2300" in output
+    assert "Session start:         21:00 (T-1)" in output
+    assert "Session end:           15:00 (T)" in output
+    assert "Friday night open:     yes" in output
+    assert "Saturday trading:      no" in output
+    assert "Sunday trading:        no" in output
+    assert "Sunday night open:     no" in output
+    assert "Monday session open:   Friday 21:00" in output
+    assert "Friday session close:  Friday 15:00" in output
+
+
+def test_main_cal_alias_and_positional(capsys):
+    preview_module.main(["cal", "cme"])
+    output = capsys.readouterr().out
+    assert "CME Globex Crypto" in output
+    assert "Sunday night open:     yes" in output
+    assert "Friday night open:     no" in output
+
+
+def test_main_calendars_with_positional_calendar(capsys):
+    preview_module.main(["calendars", "sse"])
+    output = capsys.readouterr().out
+    assert "Session start:         09:30 (T)" in output
+    assert "Friday night open:     no" in output

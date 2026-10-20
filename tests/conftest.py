@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from typing import Callable
+
 import pytest
 
 from chronosx_quant.performance import PerformanceRegistry
 from chronosx_quant.scheduler import StaticMinuteScheduler
-from tests.helpers import get_scheduler as _get_scheduler, use_tz
+from tests.helpers import get_scheduler as _get_scheduler
+from tests.helpers import use_tz
 
 
 @pytest.fixture(autouse=True)

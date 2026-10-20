@@ -1,4 +1,3 @@
-from pandas_market_calendars.class_registry import ProtectedDict
 from abc import ABC, abstractmethod
 from datetime import time
 from functools import cached_property
@@ -6,6 +5,7 @@ from typing import Any, cast
 
 import pandas as pd
 from pandas_market_calendars.calendars.sse import SSEExchangeCalendar
+from pandas_market_calendars.class_registry import ProtectedDict
 
 
 class _BaseChinaFuturesNightCalendar(SSEExchangeCalendar, ABC):
