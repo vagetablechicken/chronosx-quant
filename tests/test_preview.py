@@ -258,6 +258,7 @@ def test_main_lists_calendar_ids(capsys):
         "3   f23    CN_FUTURES_2300",
         "4   f01    CN_FUTURES_0100",
         "5   f02    CN_FUTURES_0230",
+        "6   idc    IDC",
     ]
 
 
@@ -267,6 +268,7 @@ def test_calendar_short_aliases():
     assert preview_module.resolve_calendar("f23") == "CN_FUTURES_2300"
     assert preview_module.resolve_calendar("f01") == "CN_FUTURES_0100"
     assert preview_module.resolve_calendar("f02") == "CN_FUTURES_0230"
+    assert preview_module.resolve_calendar("idc") == "IDC"
 
 
 def test_main_check_command(capsys):
@@ -419,3 +421,26 @@ def test_main_calendars_with_positional_calendar(capsys):
     output = capsys.readouterr().out
     assert "Session start:         09:30 (T)" in output
     assert "Friday night open:     no" in output
+
+
+def test_idc_calendar_holidays_preview(capsys):
+    idc = preview_module.build_session_preview("IDC")
+    assert idc["calendar_name"] == "IDC"
+    assert idc["has_holidays"] is False
+    assert idc["holidays_description"] == "no holidays"
+
+    sse = preview_module.build_session_preview("SSE")
+    assert sse["has_holidays"] is True
+    assert sse["holidays_description"] == "observes market holidays"
+
+    preview_module.main(["cal", "IDC"])
+    cal_out = capsys.readouterr().out
+    assert "Holidays:              no (no holidays)" in cal_out
+
+    preview_module.main(["cal", "sse"])
+    cal_sse_out = capsys.readouterr().out
+    assert "Holidays:              yes" in cal_sse_out
+
+    preview_module.main(["h", "-c", "IDC"])
+    h_out = capsys.readouterr().out
+    assert "(none - calendar has no holidays)" in h_out

@@ -1,4 +1,3 @@
-
 import sys
 from datetime import time
 
@@ -21,10 +20,12 @@ class IDCCalendar(MarketCalendar):
 
     aliases = ["IDC"]
 
-    regular_market_times = ProtectedDict({
-        "market_open": ((None, time(17, 0), -1),),
-        "market_close": ((None, time(17, 0)),),
-    })
+    regular_market_times = ProtectedDict(
+        {
+            "market_open": ((None, time(17, 0), -1),),
+            "market_close": ((None, time(17, 0)),),
+        }
+    )
 
     @property
     def name(self):

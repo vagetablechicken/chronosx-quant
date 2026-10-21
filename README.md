@@ -16,7 +16,7 @@ pip install chronosx-quant
 # `cxq` stands for ChronosX Quant. It is the short command for
 # `chronosx-preview`; both commands provide the same functionality.
 # shortest forms: cal=calendar/session, ls=calendars, h=holidays, q=check
-# calendar aliases: sse, cme, f23, f01, f02
+# calendar aliases: sse, cme, f23, f01, f02, idc
 cxq ls
 cxq cal f23                           # inspect session timing, breaks, and weekend trading
 cxq cal cme

@@ -10,28 +10,27 @@ import pandas as pd
 from . import __version__
 from .scheduler import SchedulerManager, StaticMinuteScheduler
 
-CALENDAR_IDS = {
-    1: "SSE",
-    2: "CME Globex Crypto",
-    3: "CN_FUTURES_2300",
-    4: "CN_FUTURES_0100",
-    5: "CN_FUTURES_0230",
-}
-CALENDAR_ALIASES = {
-    "sse": "SSE",
-    "cme": "CME Globex Crypto",
-    "f23": "CN_FUTURES_2300",
-    "f01": "CN_FUTURES_0100",
-    "f02": "CN_FUTURES_0230",
-}
-CALENDAR_SHORT_NAMES = {
-    1: "sse",
-    2: "cme",
-    3: "f23",
-    4: "f01",
-    5: "f02",
-}
-NAME_TO_CALENDAR_ID = {name: cid for cid, name in CALENDAR_IDS.items()}
+SUPPORTED_CALENDARS: list[tuple[str | tuple[str, ...], str]] = [
+    ("sse", "SSE"),
+    ("cme", "CME Globex Crypto"),
+    ("f23", "CN_FUTURES_2300"),
+    ("f01", "CN_FUTURES_0100"),
+    ("f02", "CN_FUTURES_0230"),
+    ("idc", "IDC"),
+]
+
+CALENDAR_IDS: dict[int, str] = {}
+CALENDAR_SHORT_NAMES: dict[int, str] = {}
+CALENDAR_ALIASES: dict[str, str] = {}
+
+for _idx, (_aliases, _name) in enumerate(SUPPORTED_CALENDARS, 1):
+    CALENDAR_IDS[_idx] = _name
+    _alias_tuple = (_aliases,) if isinstance(_aliases, str) else tuple(_aliases)
+    CALENDAR_SHORT_NAMES[_idx] = _alias_tuple[0]
+    for _alias in _alias_tuple:
+        CALENDAR_ALIASES[_alias.lower()] = _name
+
+NAME_TO_CALENDAR_ID: dict[str, int] = {name: cid for cid, name in CALENDAR_IDS.items()}
 DEFAULT_PREVIEW_CALENDAR_ID = 1
 
 
@@ -86,6 +85,40 @@ def _make_scheduler(
     return StaticMinuteScheduler(resolve_calendar(calendar_name), **kwargs)
 
 
+def _calendar_has_holidays(calendar: Any) -> bool:
+    if calendar is None:
+        return False
+    regular = getattr(calendar, "regular_holidays", None)
+    if regular is not None:
+        rules = getattr(regular, "rules", None)
+        if rules is None or len(rules) > 0:
+            return True
+    adhoc = getattr(calendar, "adhoc_holidays", None)
+    if adhoc is not None and len(adhoc) > 0:
+        return True
+    holidays_fn = getattr(calendar, "holidays", None)
+    if callable(holidays_fn):
+        try:
+            cbd = holidays_fn()
+            kwds = getattr(cbd, "kwds", {})
+            holidays_kwd = kwds.get("holidays")
+            if holidays_kwd is not None and len(holidays_kwd) > 0:
+                return True
+            cal_obj = kwds.get("calendar")
+            if cal_obj is not None:
+                if hasattr(cal_obj, "rules") and len(cal_obj.rules) > 0:
+                    return True
+                busday_holidays = getattr(cal_obj, "holidays", None)
+                if busday_holidays is not None and len(busday_holidays) > 0:
+                    return True
+            cbd_holidays = getattr(cbd, "holidays", None)
+            if cbd_holidays is not None and len(cbd_holidays) > 0:
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def _holiday_payload(
     scheduler: StaticMinuteScheduler,
     *,
@@ -108,6 +141,7 @@ def _holiday_payload(
         for holiday in holiday_dates
         if start_date <= holiday < end_date
     ]
+    has_holidays = _calendar_has_holidays(calendar)
     return {
         "calendar_name": calendar.name,
         "calendar_full_name": calendar.full_name,
@@ -116,6 +150,10 @@ def _holiday_payload(
         "range_start": start_date.isoformat(),
         "days_ahead": days_ahead,
         "range_end": end_date.isoformat(),
+        "has_holidays": has_holidays,
+        "holidays_description": "observes market holidays"
+        if has_holidays
+        else "no holidays",
         "latest_holidays": [holiday.isoformat() for holiday in holiday_dates[-5:]],
         "upcoming_holidays": holidays_in_range,
     }
@@ -253,6 +291,9 @@ def _session_payload(scheduler: Any) -> dict[str, object]:
         except Exception:
             normal_week = None
 
+    has_holidays = _calendar_has_holidays(calendar)
+    holidays_description = "observes market holidays" if has_holidays else "no holidays"
+
     if normal_week is None:
         return {
             "calendar_id": calendar_id,
@@ -260,6 +301,8 @@ def _session_payload(scheduler: Any) -> dict[str, object]:
             "calendar_full_name": calendar_full_name,
             "alias": alias,
             "timezone": str(tz),
+            "has_holidays": has_holidays,
+            "holidays_description": holidays_description,
             "session_start": "09:30 (T)",
             "session_end": "15:00 (T)",
             "session_start_time": "09:30",
@@ -324,7 +367,9 @@ def _session_payload(scheduler: Any) -> dict[str, object]:
     minutes = total_trading_minutes % 60
     total_hours_str = f"{hours}h {minutes:02d}m" if hours > 0 else f"{minutes}m"
 
-    fri_start = pd.Timestamp(fri.date(), tz=target_scheduler.tz) + pd.Timedelta(hours=18)
+    fri_start = pd.Timestamp(fri.date(), tz=target_scheduler.tz) + pd.Timedelta(
+        hours=18
+    )
     fri_end = pd.Timestamp(fri.date(), tz=target_scheduler.tz) + pd.Timedelta(
         hours=23, minutes=59
     )
@@ -338,9 +383,7 @@ def _session_payload(scheduler: Any) -> dict[str, object]:
         first_fri_iv = fri_night_intervals[0]
         friday_night_time = first_fri_iv.left.strftime("%H:%M")
         fri_close_day = first_fri_iv.right.strftime("%A %H:%M")
-        friday_night_description = (
-            f"opens Friday {friday_night_time}, closes {fri_close_day}, part of Monday session"
-        )
+        friday_night_description = f"opens Friday {friday_night_time}, closes {fri_close_day}, part of Monday session"
     else:
         friday_night_time = None
         friday_night_description = "closed on Friday night"
@@ -423,6 +466,8 @@ def _session_payload(scheduler: Any) -> dict[str, object]:
         "calendar_full_name": calendar_full_name,
         "alias": alias,
         "timezone": str(tz),
+        "has_holidays": has_holidays,
+        "holidays_description": holidays_description,
         "session_start": f"{wed_open.strftime('%H:%M')} ({_format_day_offset(open_offset)})",
         "session_end": f"{wed_close.strftime('%H:%M')} ({_format_day_offset(close_offset)})",
         "session_start_time": wed_open.strftime("%H:%M"),
@@ -501,7 +546,10 @@ def _print_holidays(payload: dict[str, Any]) -> None:
     holidays = payload["upcoming_holidays"]
     print(f"Holidays: {len(holidays)}")
     if not holidays:
-        print("  (none)")
+        if not payload.get("has_holidays", True):
+            print("  (none - calendar has no holidays)")
+        else:
+            print("  (none)")
         return
     for holiday in holidays:
         print(f"  {holiday}  {pd.Timestamp(holiday).day_name()}")
@@ -528,6 +576,12 @@ def _print_session(payload: dict[str, Any]) -> None:
         f"Calendar:              {payload['calendar_name']} ({payload['calendar_full_name']}){id_str}{alias_str}"
     )
     print(f"Timezone:              {payload['timezone']}")
+    holidays_info = (
+        "yes"
+        if payload.get("has_holidays", True)
+        else f"no ({payload.get('holidays_description', 'no holidays')})"
+    )
+    print(f"Holidays:              {holidays_info}")
     print(f"Session start:         {payload['session_start']}")
     print(f"Session end:           {payload['session_end']}")
     print(
